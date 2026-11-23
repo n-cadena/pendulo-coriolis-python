@@ -1,3 +1,99 @@
+    """Péndulo de Coriolis. Cálculos: Python/NumPy/SciPy DOP853.
+La reproducción de los fotogramas YA calculados se efectúa en Plotly en el navegador.
+Ejecutar: streamlit run app.py
+"""
+from dataclasses import replace
+import numpy as np
+import plotly.graph_objects as go
+import streamlit as st
+from fisica import Parametros, OMEGA_TIERRA, calcular, magnitudes, precesion_grados_hora
+from ecuaciones import GRUPOS
+
+st.set_page_config(page_title="Péndulo de Coriolis | Python", page_icon="🌀", layout="wide", initial_sidebar_state="collapsed")
+C = {"fondo":"#0B0F19","panel":"#151C2C","cian":"#00F0FF","rosa":"#EC70FF", "verde":"#44E08A","amarillo":"#FFCC55","rojo":"#FF6175","azul":"#559CFF","texto":"#EAF2FF","gris":"#AAB8CC"}
+st.markdown("""<style>
+.stApp {background:#0B0F19;color:#EAF2FF}
+.block-container {max-width:1250px; padding-top:1rem; padding-bottom:2rem}
+h1 {color:#00F0FF!important;font-size:clamp(1.45rem,4vw,2.25rem)!important}
+[data-testid="stMetric"] {background:#151C2C;border:1px solid #344054;border-radius:12px;padding:0.65rem}
+[data-testid="stMetricValue"] {font-size:clamp(1.05rem,2.5vw,1.5rem)}
+[data-testid="stMetricLabel"] {color:#AAB8CC}
+.stButton>button[kind="primary"],.stFormSubmitButton>button[kind="primary"] {background:#00cbdc;color:#081521;border:0}
+.small {color:#AAB8CC;font-size:.85rem}
+</style>""", unsafe_allow_html=True)
+
+def fmt(n, dec=2):
+    """Español: 1.234,56; números pequeños permiten decimales suficientes."""
+    value = f"{float(n):,.{dec}f}"
+    return value.replace(",", "§").replace(".", ",").replace("§", ".")
+
+def numero_fuerza(n):
+    n=float(n)
+    if n != 0 and abs(n)<0.000001:
+        return f"{fmt(n*1e6, 3)} µN"
+    if n != 0 and abs(n)<0.001:
+        return f"{fmt(n*1e3, 3)} mN"
+    return f"{fmt(n, 3)} N"
+
+if "config" not in st.session_state:
+    st.session_state.config=vars(Parametros()).copy()
+if "revision" not in st.session_state:
+    st.session_state.revision=0
+
+st.title("🌀 Péndulo de Coriolis")
+st.caption("Física original en **Python + NumPy + SciPy (DOP853)**. El navegador reproduce los fotogramas precalculados, sin recalcular la física durante la animación.")
+st.subheader("⚙️ Parámetros y modos de demostración")
+st.caption("Los controles están aquí, visibles tanto en celular como en computador. Modifica los valores y pulsa **Aplicar cambios**.")
+cfg=st.session_state.config
+with st.form("parametros"):
+    k1,k2=st.columns(2)
+    with k1:
+        L=st.slider("Longitud de cuerda (m)",0.5,8.0,float(cfg["longitud"]),0.1)
+        ang=st.slider("Ángulo inicial (°)",1,60,int(round(cfg["angulo"])))
+        lat=st.slider("Latitud (°)",-90,90,int(round(cfg["latitud"])))
+    with k2:
+        mass=st.slider("Masa (kg)",0.1,10.0,float(cfg["masa"]),0.1)
+        az=st.slider("Azimut (°)",0,360,int(round(cfg["azimut"])),5)
+        vel=st.slider("Velocidad inicial (m/s)",0.0,3.0,float(cfg["velocidad"]),0.1)
+    a,b=st.columns(2)
+    options=["Real ×1","Demo ×100","Demo ×1000"]
+    mult={"Real ×1":1.0,"Demo ×100":100.0,"Demo ×1000":1000.0}
+    with a:
+        modo=st.radio("Rotación terrestre",options,index=[1.0,100.0,1000.0].index(float(cfg["multiplicador"])),horizontal=True)
+    with b:
+        cor=st.toggle("Activar efecto Coriolis",value=bool(cfg["coriolis"]))
+    aplicar=st.form_submit_button("Aplicar cambios y recalcular",type="primary",use_container_width=True)
+if aplicar:
+    st.session_state.config=dict(longitud=L,masa=mass,angulo=float(ang),azimut=float(az),latitud=float(lat),velocidad=vel,multiplicador=mult[modo],coriolis=cor,gravedad=9.81)
+    st.session_state.revision+=1
+    st.rerun()
+
+p=Parametros(**st.session_state.config)
+
+@st.cache_data(show_spinner=False,max_entries=8)
+def resolver(key):
+    parametros=Parametros(**dict(key))
+    ts,ys=calcular(parametros, duracion=240.0,dt=0.08)
+    _,base=calcular(replace(parametros,coriolis=False),duracion=240.0,dt=0.08)
+    return ts,ys,base
+
+with st.spinner("Calculando trayectorias en Python…"):
+    ts,ys,base=resolver(tuple(sorted(vars(p).items())))
+
+st.markdown("### 🎞️ Animación 3D")
+st.caption("Pulsa **▶ Reproducir** dentro del gráfico. Usa el control de tiempo para avanzar o retroceder. Arrastra la imagen para girar la cámara. La reproducción ocurre localmente en el navegador.")
+
+v1,v2,v3,v4,v5=st.columns(5)
+with v1: vg=st.checkbox("Gravedad",True)
+with v2: vt=st.checkbox("Tensión",True)
+with v3: vc=st.checkbox("Coriolis",True)
+with v4: vv=st.checkbox("Velocidad",True)
+with v5: va=st.checkbox("Aceleración",True)
+visible={"Fg":vg,"T":vt,"Fc":vc,"v":vv,"a":va}
+
+def escala_vec(vector,clave):
+    denomin={"Fg":p.masa*p.gravedad,"T":p.masa*p.gravedad,
+             "Fc":max(2*p.masa*OMEGA_TIERRA*p.multiplicador*np.sqrt(p.gravedad*p.longitud),1e-12),
              "v":np.sqrt(p.gravedad*p.longitud),"a":p.gravedad}[clave]
     return np.asarray(vector)/denomin*(.43*p.longitud)
 
@@ -112,4 +208,3 @@ with st.expander("∑ Ver las ecuaciones y su significado"):
 with st.expander("🐍 Cómo sustentar el código Python"):
     st.markdown("""El archivo **`fisica.py`** contiene las funciones `rotacion_local`, `condiciones_iniciales`, `magnitudes`, `ecuaciones` y `calcular`. **NumPy** opera con vectores y **SciPy DOP853** integra el movimiento. `app.py` controla la interfaz y entrega los resultados a Plotly. **Plotly únicamente anima en el navegador los resultados precalculados por Python**; no sustituye el cálculo físico.""")
 st.caption("Modelo ideal · Sistema de ejes Este–Norte–Arriba · Python + SciPy + Streamlit + Plotly")
-
