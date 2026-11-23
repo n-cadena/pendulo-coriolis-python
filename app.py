@@ -1,157 +1,220 @@
-"""Péndulo de Coriolis: física en Python + reproducción interactiva en navegador.
-Ejecutar: streamlit run app.py
+"""Péndulo de Coriolis · Streamlit + SciPy + visor táctil.
+
+Estructura:
+- fisica.py implementa las leyes de Newton y la fuerza de Coriolis.
+- app.py integra TRAMOS SUCESIVOS con solve_ivp/DOP853 en Python.
+- pendulo_frontend/index.html dibuja esos resultados y pide el siguiente tramo.
+
+No se reciclan trayectorias y no existe una duración total fija.
+Para ejecutar: streamlit run app.py
 """
 from dataclasses import replace
-import json
+from pathlib import Path
 import numpy as np
 import streamlit as st
 import streamlit.components.v1 as components
-from fisica import Parametros, OMEGA_TIERRA, calcular, magnitudes, precesion_grados_hora
+from scipy.integrate import solve_ivp
+
+from fisica import (
+    Parametros, condiciones_iniciales, ecuaciones, magnitudes,
+    precesion_grados_hora,
+)
 from ecuaciones import GRUPOS
 
-st.set_page_config(page_title="Péndulo de Coriolis | Python", page_icon="🌀", layout="wide", initial_sidebar_state="expanded")
-st.markdown('''<style>
-.stApp {background:#0B0F19;color:#EAF2FF}
-.block-container {max-width:1280px;padding-top:1rem}
-h1 {color:#00F0FF!important}
+st.set_page_config(
+    page_title="Péndulo de Coriolis | Laboratorio Python",
+    page_icon="🌀", layout="wide", initial_sidebar_state="expanded",
+)
+st.markdown("""<style>
+.stApp {background:#0B0F19; color:#EAF2FF}
+.block-container {padding-top:0.6rem; padding-bottom:1.2rem; max-width:1450px}
 [data-testid="stSidebar"] {background:#151C2C}
-</style>''',unsafe_allow_html=True)
+[data-testid="stSidebar"] p, [data-testid="stSidebar"] label {color:#EAF2FF}
+h1,h2,h3 {color:#EAF2FF!important}
+header[data-testid="stHeader"] {background:transparent}
+[data-testid="stExpander"] {border:1px solid #2E425C; border-radius:13px}
+</style>""", unsafe_allow_html=True)
 
-if 'config' not in st.session_state:
-    st.session_state.config=vars(Parametros()).copy()
-cfg=st.session_state.config
+FRONTEND = components.declare_component(
+    "pendulo_coriolis_en_vivo",
+    path=str(Path(__file__).parent / "pendulo_frontend"),
+)
+
+# Se puede cambiar el tamaño de los tramos, pero no existe un máximo de tiempo.
+# Los cálculos siguen en Python incluso cuando se observan desde el celular.
+DURACION_PRIMER_TRAMO = 240.0
+DURACION_TRAMOS_SIGUIENTES = 180.0
+PASO_SALIDA = 0.12
+
+
+def integrar_tramo(p: Parametros, t0: float, inicio: np.ndarray, duracion: float):
+    """Continuar la solución desde t0, sin reemplazarla por la condición inicial.
+
+    DOP853 resuelve dr/dt=v y dv/dt=a sobre un intervalo nuevo. Se conserva
+    la misma proyección geométrica del programa original: |r|=L y r·v=0.
+    """
+    n = round(duracion / PASO_SALIDA)
+    tiempos = t0 + np.arange(n + 1, dtype=float) * (duracion / n)
+    salida = solve_ivp(
+        lambda t, y: ecuaciones(t, y, p),
+        (float(tiempos[0]), float(tiempos[-1])),
+        np.array(inicio, dtype=float, copy=True),
+        t_eval=tiempos,
+        method="DOP853", rtol=2e-9, atol=2e-11, max_step=0.15,
+    )
+    if not salida.success:
+        raise RuntimeError(f"No se pudo continuar la integración: {salida.message}")
+    estados = salida.y.T.copy()
+    for y in estados:
+        r = y[:3]
+        r *= p.longitud / np.linalg.norm(r)
+        y[3:] -= r * (np.dot(r, y[3:]) / p.longitud**2)
+    return tiempos, estados
+
+
+def generar_bloque(p: Parametros, t0: float, con_inicio, sin_inicio, duracion):
+    """Genera otro tramo y devuelve las condiciones para el tramo siguiente.
+
+    La rama 'sin Coriolis' es independiente y también continúa desde su
+    propio último estado, para una comparación físicamente consistente.
+    """
+    ts, con = integrar_tramo(p, t0, con_inicio, duracion)
+    _, sin = integrar_tramo(replace(p, coriolis=False), t0, sin_inicio, duracion)
+    registros = []
+    # La primera fila de cada nuevo bloque ya existía en el bloque anterior.
+    # Omitirla evita duplicados en el navegador.
+    primero = 0 if t0 == 0.0 else 1
+    for i in range(primero, len(ts)):
+        estado = con[i]
+        q = magnitudes(estado, p)
+        r = [
+            float(ts[i]),
+            *map(float, estado[:3]),
+            float(sin[i, 0]), float(sin[i, 1]),
+            float(np.linalg.norm(q["v"])),
+            float(np.linalg.norm(q["a"])),
+            float(np.linalg.norm(q["Fg"])),
+            float(q["tension"]),
+            float(np.linalg.norm(q["Fc"])),
+            float(q["Ec"]), float(q["Ep"]), float(q["E"]),
+        ]
+        for fuerza in ("Fg", "T", "Fc", "v", "a"):
+            r.extend(map(float, q[fuerza]))
+        # Se evitan cadenas con miles de dígitos en la transmisión de datos.
+        registros.append([round(x, 9) for x in r])
+    return registros, float(ts[-1]), con[-1].copy(), sin[-1].copy()
+
+
+def nueva_sesion(p: Parametros, generacion: int):
+    registros, t, yc, ys = generar_bloque(
+        p, 0.0, condiciones_iniciales(p), condiciones_iniciales(p),
+        DURACION_PRIMER_TRAMO,
+    )
+    return {
+        "generacion": generacion,
+        "seq": 0,
+        "last_request": -1,
+        "t": t,
+        "yc": yc,
+        "ys": ys,
+        "bloque": registros,
+    }
+
+
+if "config" not in st.session_state:
+    st.session_state.config = vars(Parametros()).copy()
+if "generacion" not in st.session_state:
+    st.session_state.generacion = 1
+cfg = st.session_state.config
 
 with st.sidebar:
-    st.header('⚙️ Parámetros del péndulo')
-    st.caption('Cambia los valores y pulsa «Aplicar cambios». Puedes ocultar este panel con la flecha superior.')
-    with st.form('params'):
-        L=st.slider('Longitud de cuerda (m)',0.5,8.0,float(cfg['longitud']),0.1)
-        mass=st.slider('Masa (kg)',0.1,10.0,float(cfg['masa']),0.1)
-        ang=st.slider('Ángulo inicial (°)',1,60,int(cfg['angulo']))
-        az=st.slider('Azimut (°)',0,360,int(cfg['azimut']),5)
-        lat=st.slider('Latitud (°)',-90,90,int(cfg['latitud']))
-        vel=st.slider('Velocidad inicial (m/s)',0.0,3.0,float(cfg['velocidad']),0.1)
-        mode_values={'Real ×1':1.0,'Demo ×100':100.0,'Demo ×1000':1000.0}
-        mode=st.radio('Rotación terrestre',list(mode_values),index=[1.0,100.0,1000.0].index(float(cfg['multiplicador'])))
-        coriolis=st.toggle('Activar efecto Coriolis',value=bool(cfg['coriolis']))
-        submit=st.form_submit_button('Aplicar cambios',type='primary',use_container_width=True)
-    if submit:
-        st.session_state.config=dict(longitud=L,masa=mass,angulo=float(ang),azimut=float(az),latitud=float(lat),velocidad=vel,multiplicador=mode_values[mode],coriolis=coriolis,gravedad=9.81)
+    st.markdown("### ⚙️ Parámetros del péndulo")
+    st.caption("Puedes ocultar esta barra con la flecha de Streamlit. Los cambios se aplican al pulsar el botón de abajo.")
+    with st.form(f"formulario_parametros_{st.session_state.generacion}", clear_on_submit=False):
+        L = st.slider("Longitud (m)", 0.5, 8.0, float(cfg["longitud"]), 0.1)
+        masa = st.slider("Masa (kg)", 0.1, 10.0, float(cfg["masa"]), 0.1)
+        theta = st.slider("Ángulo inicial (°)", 1, 60, int(cfg["angulo"]))
+        azimut = st.slider("Azimut (°)", 0, 360, int(cfg["azimut"]), 5)
+        lat = st.slider("Latitud (°)", -90, 90, int(cfg["latitud"]))
+        velocidad = st.slider("Velocidad inicial (m/s)", 0.0, 3.0, float(cfg["velocidad"]), 0.1)
+        opciones = {"Real ×1": 1., "Demo ×100": 100., "Demo ×1000": 1000.}
+        idx = (1., 100., 1000.).index(float(cfg["multiplicador"]))
+        modo = st.radio("Rotación terrestre", list(opciones), index=idx, horizontal=False)
+        coriolis = st.toggle("Activar efecto Coriolis", value=bool(cfg["coriolis"]))
+        aplicar = st.form_submit_button("Aplicar cambios", type="primary", use_container_width=True)
+    if aplicar:
+        st.session_state.config = dict(
+            longitud=L, masa=masa, angulo=float(theta), azimut=float(azimut),
+            latitud=float(lat), velocidad=velocidad,
+            multiplicador=opciones[modo], coriolis=bool(coriolis), gravedad=9.81,
+        )
+        st.session_state.generacion += 1
+        st.session_state.pop("trayectoria", None)
+        st.rerun()
+    st.caption("Física: NumPy + SciPy · método DOP853. No se repite ningún tramo.")
+
+p = Parametros(**st.session_state.config)
+st.markdown('<p style="font-size:0.70rem;color:#00F0FF;letter-spacing:.16em;font-weight:800;margin-bottom:0">LABORATORIO INTERACTIVO · FÍSICA</p>', unsafe_allow_html=True)
+st.markdown('## PÉNDULO DE <span style="color:#00F0FF">CORIOLIS</span>', unsafe_allow_html=True)
+st.caption("Modelo físico en Python · Vista interactiva desde el celular · Coordenadas Este / Norte / Arriba")
+
+if ("trayectoria" not in st.session_state or
+    st.session_state.trayectoria["generacion"] != st.session_state.generacion):
+    with st.spinner("Calculando el primer tramo físico en Python…"):
+        st.session_state.trayectoria = nueva_sesion(p, st.session_state.generacion)
+
+s = st.session_state.trayectoria
+componente = FRONTEND(
+    generation=s["generacion"], seq=s["seq"], frames=s["bloque"],
+    settings={
+        "length": p.longitud, "mass": p.masa, "gravity": p.gravedad,
+        "rotation": p.multiplicador, "coriolis": p.coriolis,
+        "precession": precesion_grados_hora(p),
+    },
+    key="pendulo_reproductor_continuo",
+    default=None,
+)
+
+# El visor NO calcula fuerzas ni trayectoria. Solo pide datos antes de que se agoten.
+# Cuando llega la petición, se conserva el estado físico exacto del último
+# fotograma y se empieza otro intervalo temporal con DOP853.
+# Controles táctiles de reproducción y rotación: estos cambios vuelven a
+# calcular físicamente desde t=0 con la configuración elegida.
+if isinstance(componente, dict) and componente.get("generation") == s["generacion"]:
+    tipo = componente.get("type")
+    if tipo in ("restart", "set_mode", "set_coriolis"):
+        if tipo == "set_mode" and componente.get("rotation") in (1, 100, 1000):
+            st.session_state.config["multiplicador"] = float(componente["rotation"])
+        elif tipo == "set_coriolis":
+            st.session_state.config["coriolis"] = not bool(p.coriolis)
+        st.session_state.generacion += 1
+        st.session_state.pop("trayectoria", None)
         st.rerun()
 
-p=Parametros(**st.session_state.config)
-st.title('🌀 Péndulo de Coriolis')
-st.caption('Cálculos en **Python + NumPy + SciPy (DOP853)**. Usa el panel lateral izquierdo para cambiar los parámetros. Animación y valores físicos sincronizados en tu navegador.')
+if (isinstance(componente, dict)
+        and componente.get("type") == "need_more"
+        and componente.get("generation") == s["generacion"]):
+    try:
+        peticion = int(componente["request"])
+    except (ValueError, TypeError, KeyError):
+        peticion = -1
+    if peticion > s["last_request"]:
+        s["last_request"] = peticion
+        with st.spinner("Python está calculando el siguiente tramo…"):
+            reg, s["t"], s["yc"], s["ys"] = generar_bloque(
+                p, s["t"], s["yc"], s["ys"], DURACION_TRAMOS_SIGUIENTES,
+            )
+        s["seq"] += 1
+        s["bloque"] = reg
+        st.rerun()
 
-@st.cache_data(show_spinner=False,max_entries=6)
-def resolver(pares):
-    par=Parametros(**dict(pares))
-    # Tiempo de cálculo interno, NO un límite del botón de reproducción.
-    ts, ys=calcular(par,duracion=600.0,dt=0.16)
-    _, sin=calcular(replace(par,coriolis=False),duracion=600.0,dt=0.16)
-    return ts,ys,sin
-
-with st.spinner('Python está calculando la trayectoria y las fuerzas…'):
-    ts,ys,sin=resolver(tuple(sorted(vars(p).items())))
-
-# Reducir transferencia de datos: geometría y magnitudes se calculan en Python.
-# Todos los números del panel móvil salen de magnitudes(), no de JS.
-idx=np.unique(np.r_[np.arange(0,len(ts),2),len(ts)-1]).astype(int)
-records=[]
-for i in idx:
-    q=magnitudes(ys[i],p)
-    records.append([
-        round(float(ts[i]),3),
-        *[round(float(z),7) for z in ys[i,:3]],
-        *[round(float(z),7) for z in sin[i,:2]],
-        *[round(float(np.linalg.norm(q[k])),9) for k in ('v','a','Fg','Fc')],
-        round(float(q['tension']),8),round(float(q['E']),8),
-        *[round(float(z),7) for k in ('Fg','T','Fc','v','a') for z in q[k]],
-    ])
-
-payload=json.dumps({'frames':records,'length':p.longitud,'grav':p.gravedad,
-                   'precession':precesion_grados_hora(p),'coriolis':p.coriolis,
-                   'rotation':p.multiplicador},separators=(',',':'))
-# Index mapping: [t,x,y,z,x_sin,y_sin, |v|,|a|,|Fg|,|Fc|,T,E, (Fg xyz),(T xyz),(Fc xyz),(v xyz),(a xyz)]
-html=r'''<!doctype html><html lang="es"><head><meta charset="UTF-8"/>
-<meta name="viewport" content="width=device-width, initial-scale=1"/>
-<script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
-<style>
-*{box-sizing:border-box}body{font-family:system-ui,Arial,sans-serif;background:#0B0F19;color:#EAF2FF;margin:0}
-.controls{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:8px 0 10px}
-button,select{background:#18283B;color:#EAF2FF;border:1px solid #496080;border-radius:8px;padding:9px 12px;font-size:14px;cursor:pointer}
-button:hover{background:#22415D}.time{font-variant-numeric:tabular-nums;color:#ffcc55;font-weight:bold}
-.grid{display:grid;grid-template-columns:1.25fr 1fr;gap:9px}.panel{background:#151C2C;border:1px solid #283D59;border-radius:12px;overflow:hidden;padding:4px}
-.plot{width:100%;height:280px}.plot3{height:570px}.metrics{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px;margin-top:10px}
-.metric{background:#151C2C;border:1px solid #344054;border-radius:10px;padding:12px;min-width:0}.metric label{display:block;color:#AAB8CC;font-size:12px}.metric strong{display:block;font-size:clamp(14px,2vw,21px);margin-top:5px;font-variant-numeric:tabular-nums}
-.note{color:#AAB8CC;font-size:12px;margin:8px 1px 14px}.legend{display:flex;gap:10px;flex-wrap:wrap;font-size:12px}.legend label{white-space:nowrap}
-@media(max-width:730px){.grid{grid-template-columns:1fr}.plot3{height:400px}.plot{height:250px}.metrics{grid-template-columns:repeat(2,minmax(0,1fr))}}
-</style></head><body>
-<div class="controls">
-<button id="play">▶ Reproducir</button><button id="restart">↺ Reiniciar</button>
-<label>Velocidad <select id="speed"><option value="1">×1</option><option value="5">×5</option><option value="10" selected>×10</option><option value="25">×25</option><option value="50">×50</option><option value="100">×100</option></select></label>
-<span class="time" id="clock">t = 0,0 s</span>
-</div>
-<div class="legend" id="vectors"><label><input type="checkbox" data-vector="0" checked> 🔴 Gravedad</label><label><input type="checkbox" data-vector="1" checked> 🔵 Tensión</label><label><input type="checkbox" data-vector="2" checked> 🟣 Coriolis</label><label><input type="checkbox" data-vector="3" checked> 🟢 Velocidad</label><label><input type="checkbox" data-vector="4" checked> 🟡 Aceleración</label></div>
-<div class="grid"><div class="panel"><div id="plot3d" class="plot3"></div></div><div class="panel"><div id="top" class="plot"></div><div id="horizontal" class="plot"></div></div></div>
-<div class="metrics">
-<div class="metric"><label>Rapidez</label><strong id="velocity">—</strong></div>
-<div class="metric"><label>Aceleración</label><strong id="accel">—</strong></div>
-<div class="metric"><label>Fuerza de Coriolis</label><strong id="cforce">—</strong></div>
-<div class="metric"><label>Fuerza de gravedad</label><strong id="weight">—</strong></div>
-<div class="metric"><label>Tensión de la cuerda</label><strong id="tension">—</strong></div>
-<div class="metric"><label>Energía total</label><strong id="energy">—</strong></div>
-</div>
-<div class="note" id="extra"></div>
-<div class="note">El botón Reproducir no se detiene solo: cuando termina el tramo precalculado, comienza otro ciclo desde el inicio. La trayectoria del siguiente ciclo no es una continuación física de la anterior. Las flechas se amplifican por separado para visualizarlas, especialmente Coriolis. Puedes girar y acercar el gráfico 3D con el dedo.</div>
-<script>
-const D=__PAYLOAD__;
-const rows=D.frames, L=D.length, maxIdx=rows.length-1;
-const color={bg:'#0B0F19',panel:'#151C2C',grid:'#344054',fg:'#FF6175',t:'#559CFF',fc:'#EC70FF',v:'#44E08A',a:'#FFCC55',pos:'#00F0FF',txt:'#EAF2FF',muted:'#AAB8CC'};
-let current=0, running=false, prev=0, simT=0, lastDraw=0;
-const g=(id)=>document.getElementById(id);
-const fmt=(v,n=2)=>Number(v).toLocaleString('es-CO',{minimumFractionDigits:n,maximumFractionDigits:n});
-function fN(v){if(v!==0 && Math.abs(v)<1e-6)return fmt(v*1e6,3)+' µN';if(v!==0 && Math.abs(v)<1e-3)return fmt(v*1e3,3)+' mN';return fmt(v,3)+' N'}
-const common={paper_bgcolor:color.panel,plot_bgcolor:color.panel,font:{color:color.txt,size:11},margin:{l:43,r:12,t:36,b:40},showlegend:false};
-function tr3(x=[],y=[],z=[],c=color.pos,w=3){return {type:'scatter3d',mode:'lines',x,y,z,line:{color:c,width:w},hoverinfo:'skip',showlegend:false}}
-let data3=[tr3(),tr3([],[],[],color.txt,5),{type:'scatter3d',mode:'markers',x:[],y:[],z:[],marker:{size:8,color:color.pos},hoverinfo:'skip'}];
-const vs=[color.fg,color.t,color.fc,color.v,color.a];for(const c of vs)data3.push(tr3([],[],[],c,5));
-const scene={xaxis:{title:'Este x (m)',range:[-1.15*L,1.15*L],backgroundcolor:color.panel},yaxis:{title:'Norte y (m)',range:[-1.15*L,1.15*L],backgroundcolor:color.panel},zaxis:{title:'Arriba z (m)',range:[-1.23*L,.2*L],backgroundcolor:color.panel},aspectmode:'manual',aspectratio:{x:1,y:1,z:.75},camera:{eye:{x:1.4,y:1.5,z:1.0}}};
-const topData=[{type:'scatter',mode:'lines',x:[],y:[],line:{color:color.muted,dash:'dash',width:1.5},name:'Sin Coriolis'}, {type:'scatter',mode:'lines',x:[],y:[],line:{color:color.pos,width:2},name:'Actual'}, {type:'scatter',mode:'markers',x:[],y:[],marker:{color:color.a,size:8},showlegend:false}];
-const horData=[{type:'scatter',mode:'lines',x:[],y:[],line:{color:color.pos,width:2},name:'Este (x)'},{type:'scatter',mode:'lines',x:[],y:[],line:{color:color.fc,width:2},name:'Norte (y)'}];
-let ready=false;
-async function init(){if(!window.Plotly){g('extra').textContent='No se pudo cargar Plotly. Comprueba tu conexión a internet y recarga la página.';return;}
-await Plotly.newPlot('plot3d',data3,{...common,margin:{l:0,r:0,t:28,b:0},title:{text:'Péndulo 3D',font:{size:15}},scene}, {responsive:true,displaylogo:false,scrollZoom:false});
-await Plotly.newPlot('top',topData,{...common,title:{text:'Vista superior',font:{size:14}},xaxis:{title:'Este (m)',range:[-1.12*L,1.12*L],gridcolor:color.grid},yaxis:{title:'Norte (m)',range:[-1.12*L,1.12*L],scaleanchor:'x',gridcolor:color.grid}}, {responsive:true,displaylogo:false});
-await Plotly.newPlot('horizontal',horData,{...common,title:{text:'Movimiento horizontal',font:{size:14}},xaxis:{title:'Tiempo (s)',range:[0,60],gridcolor:color.grid},yaxis:{title:'Posición (m)',range:[-.85*L,.85*L],gridcolor:color.grid}}, {responsive:true,displaylogo:false});
-ready=true;render(0);requestAnimationFrame(tick);
-}
-function arrow(r,v,scale){let q=v.map(z=>z*scale),norm=Math.hypot(...q);if(norm<1e-11)return {x:[null],y:[null],z:[null]};let e=r.map((z,i)=>z+q[i]);let u=q.map(z=>z/norm),ref=Math.abs(u[2])<.93?[0,0,1]:[0,1,0];let cross=[u[1]*ref[2]-u[2]*ref[1],u[2]*ref[0]-u[0]*ref[2],u[0]*ref[1]-u[1]*ref[0]];let cn=Math.hypot(...cross);let p1=e.map((z,i)=>z-.27*q[i]+.22*norm*cross[i]/cn),p2=e.map((z,i)=>z-.27*q[i]-.22*norm*cross[i]/cn);let pts=[r,e,null,e,p1,null,e,p2];return {x:pts.map(z=>z?z[0]:null),y:pts.map(z=>z?z[1]:null),z:pts.map(z=>z?z[2]:null)}}
-function render(i){if(!ready)return;let d=rows[i],r=d.slice(1,4),stride=Math.max(1,Math.floor((i+1)/160)),hist=[];for(let j=Math.max(0,i-5500);j<=i;j+=stride)hist.push(rows[j]);if(hist.at(-1)!==d)hist.push(d);
-const x3=[hist.map(q=>q[1]),[0,r[0]],[r[0]]],y3=[hist.map(q=>q[2]),[0,r[1]],[r[1]]],z3=[hist.map(q=>q[3]),[0,r[2]],[r[2]]];
-const denom=[D.grav?d[8]:1,D.grav?d[8]:1,Math.max(2*d[8]/D.grav*7.2921159e-5*D.rotation*Math.sqrt(D.grav*L),1e-12),Math.sqrt(D.grav*L),D.grav];
-for(let k=0;k<5;k++){const checked=document.querySelector('[data-vector="'+k+'"]').checked;const q=checked?arrow(r,d.slice(12+k*3,15+k*3),.43*L/denom[k]):{x:[null],y:[null],z:[null]};x3.push(q.x);y3.push(q.y);z3.push(q.z)}
-Plotly.restyle('plot3d',{x:x3,y:y3,z:z3},[0,1,2,3,4,5,6,7]);
-const hidx=[];for(let j=Math.max(0,i-1800);j<=i;j+=Math.max(1,Math.floor((i+1)/220)))hidx.push(j);if(hidx.at(-1)!==i)hidx.push(i);
-const h=hidx.map(j=>rows[j]);
-Plotly.restyle('top',{x:[h.map(z=>z[4]),h.map(z=>z[1]),[d[1]]],y:[h.map(z=>z[5]),h.map(z=>z[2]),[d[2]]]},[0,1,2]);
-Plotly.restyle('horizontal',{x:[h.map(z=>z[0]),h.map(z=>z[0])],y:[h.map(z=>z[1]),h.map(z=>z[2])]},[0,1]);
-Plotly.relayout('horizontal',{'xaxis.range':[Math.max(0,d[0]-60),Math.max(60,d[0])]});
-g('velocity').textContent=fmt(d[6],3)+' m/s';g('accel').textContent=fmt(d[7],3)+' m/s²';g('weight').textContent=fN(d[8]);g('cforce').textContent=fN(d[9]);g('tension').textContent=fN(d[10]);g('energy').textContent=fmt(d[11],3)+' J';g('clock').textContent='t = '+fmt(d[0],1)+' s';
-}
-function tick(now){if(running){if(prev){simT+=(now-prev)/1000*Number(g('speed').value);if(simT>rows[maxIdx][0])simT=simT%rows[maxIdx][0];}if(now-lastDraw>=85){let n=Math.round(simT/(rows[maxIdx][0]/maxIdx));n=Math.max(0,Math.min(maxIdx,n));if(n!==current){current=n;render(n)}lastDraw=now;}}prev=now;requestAnimationFrame(tick)}
-g('play').onclick=()=>{running=!running;prev=0;g('play').textContent=running?'⏸ Pausar':'▶ Reproducir'};
-g('restart').onclick=()=>{running=false;simT=0;prev=0;current=0;g('play').textContent='▶ Reproducir';render(0)};
-g('extra').textContent='Gravedad: '+fmt(D.grav,2)+' m/s² · Precesión aproximada: '+(D.coriolis?fmt(D.precession,2)+' °/h':'no aplicable (Coriolis desactivado)')+' · Rotación terrestre ×'+fmt(D.rotation,0);
-init();
-</script></body></html>'''
-html=html.replace('__PAYLOAD__',payload)
-components.html(html,height=1300,scrolling=True)
-with st.expander('∑ Ecuaciones utilizadas y significado'):
-    for name,items in GRUPOS:
-        st.subheader(name)
-        for title,formula,description in items:
-            st.markdown(f'**{title}**')
+with st.expander("∑ Las 25 ecuaciones del modelo (desarrollo completo)", expanded=False):
+    st.caption("Estas ecuaciones son las implementadas en fisica.py y utilizadas por SciPy.")
+    for nombre, grupo in GRUPOS:
+        st.subheader(nombre)
+        for titulo, formula, descripcion in grupo:
+            st.markdown(f"**{titulo}**")
             st.latex(formula)
-            st.caption(description)
-st.caption('Modelo ideal sin rozamiento · Python + SciPy para los cálculos físicos; navegador para la visualización.')
+            st.caption(descripcion)
+
+st.caption("Cálculos físicos realizados en Python; la interfaz táctil usa HTML/JavaScript únicamente para dibujar y animar los resultados.")
