@@ -1,0 +1,358 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Péndulo de Coriolis · Demostración de 240 s</title>
+<style>
+:root{color-scheme:dark;--bg:#0b0f19;--panel:#151f31;--tile:#101929;--stroke:#2b405d;--cyan:#00f0ff;--blue:#559cff;--green:#44e08a;--yellow:#ffcc55;--red:#ff6175;--pink:#ec70ff;--text:#eaf2ff;--muted:#9badc3}
+*{box-sizing:border-box}html,body{margin:0;padding:0;background:transparent;color:var(--text);font-family:Inter,system-ui,-apple-system,Segoe UI,Arial,sans-serif}
+body{padding:2px 3px 10px}.wrap{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(300px,1fr);gap:12px;align-items:stretch}
+.panel{background:linear-gradient(155deg,#19243a,#121b2c 85%);border:1px solid var(--stroke);border-radius:16px;overflow:hidden;min-width:0}
+.panelTitle{font-size:15px;font-weight:750}.head{min-height:51px;display:flex;justify-content:space-between;align-items:center;gap:9px;padding:14px 16px 11px}.headRight{display:flex;align-items:center;gap:8px}.subtle{color:var(--muted);font-size:11px}
+button,select{font-family:inherit;color:var(--text);font-size:13px;border-radius:9px;border:1px solid #405774;background:#23324b;padding:9px 12px;cursor:pointer}button:hover,button:focus-visible{border-color:var(--cyan)}button.primary{background:#056675;border-color:#11bfcf;color:#fff;font-weight:750}.smallBtn{padding:7px 10px;background:#18283c}.btnrow{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:11px 13px 14px}#clock{margin-left:auto;color:var(--yellow);font-variant-numeric:tabular-nums;font-weight:700;font-size:12px}
+#scene{width:100%;display:block;height:420px;touch-action:none;cursor:grab;background:radial-gradient(ellipse at 53% 45%,#17263d 0%,#0c1524 70%,#0a1220 100%)}#scene:active{cursor:grabbing}
+.sceneFooter{display:flex;justify-content:space-between;align-items:center;gap:6px;padding:7px 13px;color:var(--muted);font-size:11px;background:#101b2d}.dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin:0 5px 0 0}
+#status{font-size:11px;color:var(--muted);padding:0 14px 6px;min-height:19px}.rightSide{display:flex;flex-direction:column;gap:12px}
+.metrics{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;padding:0 13px 12px}.metric{background:var(--tile);border:1px solid var(--stroke);padding:13px 11px;border-radius:10px;min-width:0}.metric .name{color:var(--muted);font-size:11px;margin-bottom:7px}.metric strong{font-weight:800;font-size:clamp(14px,1.7vw,19px);font-variant-numeric:tabular-nums;white-space:nowrap}.metric small{display:block;margin-top:5px;color:#8395af;font-size:10px}
+.meta{padding:0 15px 14px;font-size:11px;color:var(--muted)}.controlBox{padding:12px 15px 15px;display:flex;gap:12px;flex-wrap:wrap;align-items:center}.modeRow{display:flex;flex-wrap:wrap;gap:6px}.chip{background:#24344b;border:1px solid #36506c;border-radius:8px;font-size:11px;padding:8px 10px;white-space:nowrap}.chip.active{border-color:#02cfe7;color:#82f6ff;background:#114253}.mutednote{font-size:11px;color:var(--muted);line-height:1.45}.vectorBox{padding:11px 15px 15px;display:flex;flex-wrap:wrap;gap:10px 14px}.vecLabel{font-size:12px;display:inline-flex;align-items:center;gap:5px;white-space:nowrap}.vecLabel input{accent-color:#00d9ee}
+.bottom{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px}.chartCanvas{width:100%;height:240px;display:block}.chartLegend{padding:0 14px 13px;color:var(--muted);font-size:11px;display:flex;gap:14px;flex-wrap:wrap}
+#metricsPanel{min-height:303px}#uiFoot{color:#8ea3b9;font-size:11px;padding:10px 3px;line-height:1.5}.tag{color:#00f0ff;border:1px solid #245b6b;border-radius:9px;background:#103343;font-size:11px;padding:5px 8px;font-weight:700}
+/* Panel de ecuaciones dentro del flujo del documento: visible en el iframe de Streamlit, incluso en celulares. */
+#eqPanel[hidden]{display:none!important}
+#eqPanel{margin-top:12px;padding:16px 20px 20px;scroll-margin-top:12px;overflow:visible}
+.eqhdr{display:flex;justify-content:space-between;align-items:center;gap:9px;margin-bottom:14px}
+.eqhdr strong{font-size:16px;color:var(--cyan)}
+.eqColumns{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.eqGroup{min-width:0;background:var(--tile);border:1px solid var(--stroke);border-radius:12px;padding:13px}
+.eqGroup h3{color:var(--cyan);font-size:14px;margin:0 0 12px}
+.eqGroup .item{padding:10px 0;border-bottom:1px solid #29384d;font-size:13px}
+.eqGroup .item:last-child{border:0}
+.eqGroup .formula{color:#ffe096;font-size:13px;line-height:1.5;margin:5px 0 0;font-family:Georgia,serif;overflow-wrap:anywhere}
+@media(max-width:950px){.eqColumns{grid-template-columns:1fr 1fr}}
+@media(max-width:600px){.eqColumns{grid-template-columns:1fr}#eqPanel{padding:13px}.eqhdr{align-items:flex-start}}
+@media(max-width:850px){.wrap{grid-template-columns:1fr}.rightSide{display:grid;grid-template-columns:1fr 1fr;align-items:start}#metricsPanel{grid-column:1/-1;min-height:0}#scene{height:380px}.metric strong{font-size:17px}}
+@media(max-width:600px){.rightSide{grid-template-columns:1fr}.bottom{grid-template-columns:1fr}#scene{height:330px}.chartCanvas{height:216px}.metric strong{font-size:16px}.head{padding:12px}.controlBox,.vectorBox{padding:11px}.sceneFooter{font-size:10px}.btnrow{padding:9px 10px 12px}#clock{width:100%;margin-left:0}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <section class="panel">
+    <div class="head"><div><div class="panelTitle">Péndulo 3D</div><div class="subtle">Arrastra para girar · Pellizca para acercar</div></div><button class="smallBtn" id="resetCamera">⟳ Vista inicial</button></div>
+    <canvas id="scene" aria-label="Visualización tridimensional interactiva del péndulo"></canvas>
+    <div class="sceneFooter"><span><span class="dot" style="background:var(--cyan)"></span>Bola &nbsp; <span class="dot" style="background:var(--green)"></span>Velocidad &nbsp; <span class="dot" style="background:var(--yellow)"></span>Aceleración</span><span id="modeBadge" class="tag">REAL ×1</span></div>
+    <div class="btnrow"><button class="primary" id="toggle">▶ Iniciar</button><button id="restart">↺ Reiniciar</button><button id="equations" aria-controls="eqPanel" aria-expanded="false">∑ Ver ecuaciones</button><label style="font-size:11px;color:var(--muted)">Reproducción <select id="speed"><option value="1">×1</option><option value="5">×5</option><option selected value="10">×10</option><option value="25">×25</option><option value="50">×50</option><option value="100">×100</option></select></label><span id="clock">t = 0,0 s</span></div>
+    <div id="status">En pausa · Los datos físicos se calculan en Python.</div>
+  </section>
+  <div class="rightSide">
+    <section class="panel" id="metricsPanel">
+      <div class="head"><div class="panelTitle">Valores instantáneos</div><span class="subtle">Sincronizados</span></div>
+      <div class="metrics">
+        <div class="metric"><div class="name">Rapidez |v|</div><strong style="color:var(--green)" id="valueVel">0,000 m/s</strong></div>
+        <div class="metric"><div class="name">Aceleración |a|</div><strong style="color:var(--yellow)" id="valueAcc">4,146 m/s²</strong></div>
+        <div class="metric"><div class="name">Gravedad |Fg|</div><strong style="color:var(--red)" id="valueFg">9,81 N</strong></div>
+        <div class="metric"><div class="name">Tensión T</div><strong style="color:var(--blue)" id="valueT">8,89 N</strong></div>
+        <div class="metric"><div class="name">Coriolis |Fc|</div><strong style="color:var(--pink)" id="valueFc">0,00000 N</strong></div>
+        <div class="metric"><div class="name">Energía mecánica</div><strong style="color:var(--text)" id="valueE">1,84 J</strong></div>
+      </div>
+      <div class="meta" id="precession">Precesión teórica · gravedad efectiva 9,81 m/s²</div>
+    </section>
+    <section class="panel">
+      <div class="head"><div class="panelTitle">Rotación terrestre</div><span class="subtle">Configuración desde la barra izquierda</span></div>
+      <div class="controlBox"><div class="modeRow"><button class="chip" data-mode="1">Real ×1</button><button class="chip" data-mode="100">Demo ×100</button><button class="chip" data-mode="1000">Demo ×1000</button></div><button id="switchCoriolis" class="tag">Coriolis activo</button><div class="mutednote">También puedes ajustar masa, longitud, ángulo, azimut, latitud y velocidad inicial desde el panel plegable <b>⚙️ Parámetros</b>.</div></div>
+    </section>
+    <section class="panel">
+      <div class="head"><div class="panelTitle">Vectores visibles</div></div>
+      <div class="vectorBox">
+        <label class="vecLabel"><input type="checkbox" data-vector="0" checked><span style="color:var(--red)">●</span> Gravedad</label>
+        <label class="vecLabel"><input type="checkbox" data-vector="1" checked><span style="color:var(--blue)">●</span> Tensión</label>
+        <label class="vecLabel"><input type="checkbox" data-vector="2" checked><span style="color:var(--pink)">●</span> Coriolis</label>
+        <label class="vecLabel"><input type="checkbox" data-vector="3" checked><span style="color:var(--green)">●</span> Velocidad</label>
+        <label class="vecLabel"><input type="checkbox" data-vector="4" checked><span style="color:var(--yellow)">●</span> Aceleración</label>
+      </div>
+    </section>
+  </div>
+</div>
+<section class="panel" id="eqPanel" hidden aria-label="Ecuaciones de la simulación">
+  <div class="eqhdr"><div><strong>∑ Ecuaciones de la simulación</strong><div class="subtle">25 ecuaciones del modelo físico en Python, organizadas en tres grupos</div></div><button id="closeEq" type="button">Cerrar ✕</button></div>
+  <div id="eqList" class="eqColumns"></div>
+</section>
+<div class="bottom">
+  <section class="panel"><div class="head"><div class="panelTitle">Trayectoria · Vista superior</div><span class="subtle">Se dibuja durante Play</span></div><canvas id="topChart" class="chartCanvas"></canvas><div class="chartLegend"><span style="color:var(--cyan)">● Con Coriolis</span><span style="color:#94a9bf">┄ Sin Coriolis</span></div></section>
+  <section class="panel"><div class="head"><div class="panelTitle">Movimiento horizontal</div><span class="subtle">Últimos 60 s simulados</span></div><canvas id="movementChart" class="chartCanvas"></canvas><div class="chartLegend"><span style="color:var(--cyan)">● Este (x)</span><span style="color:var(--pink)">● Norte (y)</span></div></section>
+</div>
+<div id="uiFoot">Física del péndulo: <b>Python + NumPy + SciPy (DOP853)</b>. Duración máxima: <b>240 segundos simulados</b>. Al finalizar se detiene y conserva la posición final hasta que pulses <b>Reiniciar</b>. El navegador solo dibuja estados calculados por Python. Las flechas tienen escalas propias y Coriolis está ampliada visualmente.</div>
+
+<script>
+"use strict";
+// Protocolo estándar de un componente bidireccional Streamlit v1, sin npm.
+// JavaScript SOLO visualiza; no calcula las ecuaciones diferenciales.
+function send(type, data={}){
+    window.parent.postMessage({isStreamlitMessage:true, type, ...data}, "*");
+}
+function sendHeight(){send("streamlit:setFrameHeight",{height:Math.ceil(document.documentElement.scrollHeight+8)});}
+let generation=null, lastSeq=-1, data=[], settings=null;
+let paused=true, simTime=0, lastTick=0, cursor=0, yaw=-0.78, pitch=0.34, zoom=1.0;
+let lastPaint=0;
+const $=(id)=>document.getElementById(id);
+const palette={cyan:"#00f0ff",text:"#eaf2ff",blue:"#559cff",green:"#44e08a",yellow:"#ffcc55",red:"#ff6175",pink:"#ec70ff",muted:"#829db9",grid:"#293b52"};
+const fmt=(n,dec=2)=>Number(n).toLocaleString("es-CO",{minimumFractionDigits:dec,maximumFractionDigits:dec});
+function forceFmt(n){let v=Math.abs(n);if(v>0&&v<.00001)return fmt(n*1e6,2)+" µN";if(v>0&&v<.001)return fmt(n*1e3,3)+" mN";return fmt(n,5)+" N";}
+function clamp(x,a,b){return Math.min(b,Math.max(a,x));}
+function clearSimulation(){data=[];lastSeq=-1;simTime=0;paused=true;lastTick=0;cursor=0;$("toggle").textContent="▶ Iniciar";$("toggle").disabled=false;}
+window.addEventListener("message",ev=>{
+    if (!ev.data||ev.data.type!=="streamlit:render")return;
+    const a=ev.data.args||{};
+    if(!Array.isArray(a.frames))return;
+    if(generation!==a.generation){generation=a.generation;clearSimulation();}
+    settings=a.settings||settings;
+    if(a.seq>lastSeq){
+        // La trayectoria completa llega de Python; nunca se concatena ni se repite.
+        data=a.frames.slice();
+        if(lastSeq<0)simTime=data.length?data[0][0]:0;
+        lastSeq=a.seq;
+    }
+    syncLabels();paint();sendHeight();
+});
+function syncLabels(){if(!settings)return;
+    document.querySelectorAll("[data-mode]").forEach(e=>e.classList.toggle("active",Number(e.dataset.mode)===settings.rotation));
+    $("modeBadge").textContent=settings.rotation===1?"ROTACIÓN REAL ×1":"DEMO ×"+settings.rotation;
+    $("switchCoriolis").textContent=settings.coriolis?"Coriolis: SÍ":"Coriolis: NO";
+    const p=settings.coriolis?"Precesión aprox.: "+fmt(settings.precession,2)+" °/h":"Precesión por Coriolis desactivada";
+    $("precession").textContent=p+" · g = "+fmt(settings.gravity,2)+" m/s²";
+}
+// Búsqueda rápida del tiempo t en los estados que SciPy calculó.
+function findIndex(t){
+    if(data.length<2)return 0;
+    let lo=0,hi=data.length-1;
+    while(lo<hi){let mid=(lo+hi+1)>>1;if(data[mid][0]<=t)lo=mid;else hi=mid-1;}
+    return lo;
+}
+function frameAt(t){if(!data.length)return null;
+    const i=findIndex(t);cursor=i;
+    const a=data[i];if(i>=data.length-1)return a;
+    const b=data[i+1];const f=clamp((t-a[0])/(b[0]-a[0]),0,1);
+    // Interpolación de imagen entre puntos calculados en Python: no altera
+    // la integración ni la trayectoria física de referencia.
+    return a.map((x,k)=>x+(b[k]-x)*f);
+}
+function setupCanvas(canvas){
+    const rect=canvas.getBoundingClientRect(), dpr=Math.min(2,window.devicePixelRatio||1);
+    const w=Math.max(10,rect.width),h=Math.max(10,rect.height);
+    if(canvas.width!==Math.round(w*dpr)||canvas.height!==Math.round(h*dpr)){
+        canvas.width=Math.round(w*dpr);canvas.height=Math.round(h*dpr);
+    }
+    let ctx=canvas.getContext("2d");ctx.setTransform(dpr,0,0,dpr,0,0);
+    return {ctx,w,h};
+}
+function line(ctx,pts,col,width=1,dashed=false){if(pts.length<2)return;ctx.beginPath();ctx.moveTo(pts[0].x,pts[0].y);for(let i=1;i<pts.length;i++)ctx.lineTo(pts[i].x,pts[i].y);ctx.strokeStyle=col;ctx.lineWidth=width;ctx.setLineDash(dashed?[5,7]:[]);ctx.stroke();ctx.setLineDash([]);}
+function arrow(ctx,a,b,col,name=""){
+    let dx=b.x-a.x,dy=b.y-a.y,len=Math.hypot(dx,dy);if(len<3)return;
+    let ux=dx/len,uy=dy/len;line(ctx,[a,b],col,2.4);
+    ctx.beginPath();ctx.moveTo(b.x,b.y);ctx.lineTo(b.x-10*ux-4*uy,b.y-10*uy+4*ux);ctx.lineTo(b.x-10*ux+4*uy,b.y-10*uy-4*ux);ctx.closePath();ctx.fillStyle=col;ctx.fill();
+    if(name){ctx.fillStyle=col;ctx.font="700 11px system-ui";ctx.fillText(name,b.x+5,b.y-4);}
+}
+function sceneDraw(state){
+    const {ctx,w,h}=setupCanvas($("scene"));ctx.clearRect(0,0,w,h);
+    const L=settings?.length||2, scale=Math.min(w*.34,h*.45)/L*zoom;
+    // Proyección ortográfica giratoria de las coordenadas Este/Norte/Arriba.
+    function project(x,y,z){let c=Math.cos(yaw),s=Math.sin(yaw);
+        let xp=x*c-y*s, yp=x*s+y*c;
+        return {x:w*.51+xp*scale,y:h*.26-(z*Math.cos(pitch)+yp*Math.sin(pitch))*scale};}
+    const center=project(0,0,-L),support=project(0,0,0);
+    // Círculos guía en el suelo z=-L.
+    for(const radius of [.55*L,1.0*L]){
+        const pts=[];for(let j=0;j<=64;j++){let a=j/64*Math.PI*2;pts.push(project(radius*Math.cos(a),radius*Math.sin(a),-L));}
+        line(ctx,pts,"#2b4258",1.1,true);
+    }
+    arrow(ctx,center,project(.90*L,0,-L),"#45647b","Este");
+    arrow(ctx,center,project(0,.85*L,-L),"#45647b","Norte");
+    line(ctx,[support,center],"#2b465f",1.1,true);
+    if(!state)return;
+    const r=[state[1],state[2],state[3]],ball=project(...r);
+    // Rastro de los últimos 80 segundos: evita llenar la pantalla tras horas.
+    const t=state[0],last=cursor;let start=last;
+    while(start>0&&data[start][0]>t-80)start--;
+    const stride=Math.max(1,Math.ceil((last-start)/400)),trace=[];
+    for(let j=start;j<=last;j+=stride)trace.push(project(data[j][1],data[j][2],data[j][3]));
+    trace.push(ball);line(ctx,trace,"rgba(0,240,255,.6)",1.5);
+    line(ctx,[support,ball],"#d2e6fb",2.5);
+    const normalizers=[settings.mass*settings.gravity,settings.mass*settings.gravity,
+        Math.max(2*settings.mass*7.2921159e-5*settings.rotation*Math.sqrt(settings.gravity*L),1e-10),
+        Math.sqrt(settings.gravity*L),settings.gravity];
+    const colors=[palette.red,palette.blue,palette.pink,palette.green,palette.yellow];
+    const names=["Fg","T","Fc","v","a"];
+    for(let k=0;k<5;k++){
+        let check=document.querySelector(`[data-vector="${k}"]`);
+        if(!check||!check.checked)continue;
+        const x=state[14+k*3],y=state[15+k*3],z=state[16+k*3];
+        const sc=.47*L/normalizers[k];let end=project(r[0]+x*sc,r[1]+y*sc,r[2]+z*sc);
+        arrow(ctx,ball,end,colors[k],names[k]);
+    }
+    // Soporte y bola (un pequeño brillo para mejor lectura en celular).
+    ctx.fillStyle="#a7c1d8";ctx.beginPath();ctx.arc(support.x,support.y,4,0,Math.PI*2);ctx.fill();
+    ctx.shadowColor=palette.cyan;ctx.shadowBlur=13;ctx.fillStyle=palette.cyan;
+    ctx.beginPath();ctx.arc(ball.x,ball.y,8,0,Math.PI*2);ctx.fill();ctx.shadowBlur=0;
+    ctx.fillStyle="#ffffff";ctx.beginPath();ctx.arc(ball.x-2,ball.y-2,2.5,0,Math.PI*2);ctx.fill();
+    ctx.fillStyle="#8fa6bf";ctx.font="10px system-ui";
+    ctx.fillText("X / ESTE",13,18);ctx.fillText("Y / NORTE",13,31);ctx.fillText("Z / ARRIBA",13,44);
+}
+function chartBase(canvas,titleX,titleY,rangeX,rangeY){
+    const {ctx,w,h}=setupCanvas(canvas);ctx.clearRect(0,0,w,h);
+    const box={l:59,r:w-16,t:16,b:h-38};
+    let xx=v=>box.l+(v-rangeX[0])/(rangeX[1]-rangeX[0])*(box.r-box.l),
+        yy=v=>box.b-(v-rangeY[0])/(rangeY[1]-rangeY[0])*(box.b-box.t);
+    ctx.lineWidth=1;ctx.strokeStyle=palette.grid;ctx.fillStyle="#839bb8";ctx.font="10px system-ui";
+    for(let j=0;j<=4;j++){
+        let x=box.l+j*(box.r-box.l)/4,y=box.t+j*(box.b-box.t)/4;
+        ctx.beginPath();ctx.moveTo(x,box.t);ctx.lineTo(x,box.b);ctx.moveTo(box.l,y);ctx.lineTo(box.r,y);ctx.stroke();
+        const xv=rangeX[0]+j*(rangeX[1]-rangeX[0])/4;
+        const yv=rangeY[1]-j*(rangeY[1]-rangeY[0])/4;
+        ctx.fillText(fmt(xv,rangeX[1]-rangeX[0]>100?0:1),x-10,box.b+15);ctx.fillText(fmt(yv,2),24,y+3);
+    }
+    ctx.fillStyle="#a3b6cf";ctx.font="10px system-ui";ctx.fillText(titleX,(w-ctx.measureText(titleX).width)/2,h-6);
+    ctx.save();ctx.translate(12,h/2);ctx.rotate(-Math.PI/2);ctx.fillText(titleY,-ctx.measureText(titleY).width/2,0);ctx.restore();
+    return {ctx,xx,yy,w,h};
+}
+function selectHistory(t,windowSecs,maxSamples=750){
+    const last=cursor;let start=last;while(start>0&&data[start][0]>t-windowSecs)start--;
+    const stride=Math.max(1,Math.floor((last-start)/maxSamples));let indices=[];
+    for(let j=start;j<=last;j+=stride)indices.push(j);
+    if(indices.at(-1)!==last)indices.push(last);
+    return indices;
+}
+function topDraw(state){
+    const L=settings?.length||2, d=state||data[0];if(!d)return;
+    const ax=chartBase($("topChart"),"Este x (m)","Norte y (m)",[-L*1.1,L*1.1],[-L*1.1,L*1.1]);
+    const indices=selectHistory(d[0],180,800);
+    let pts=(xi,yi)=>indices.map(i=>({x:ax.xx(data[i][xi]),y:ax.yy(data[i][yi])}));
+    line(ax.ctx,pts(4,5),"#8299b1",1.5,true);line(ax.ctx,pts(1,2),palette.cyan,2.0);
+    ax.ctx.beginPath();ax.ctx.arc(ax.xx(d[1]),ax.yy(d[2]),4.5,0,Math.PI*2);ax.ctx.fillStyle=palette.yellow;ax.ctx.fill();
+}
+function movementDraw(state){
+    const L=settings?.length||2,d=state||data[0];if(!d)return;
+    let end=d[0],begin=Math.max(0,end-60),maxT=Math.max(60,end);
+    const ax=chartBase($("movementChart"),"Tiempo (s)","Posición (m)",[Math.max(0,maxT-60),maxT],[-L*.95,L*.95]);
+    const indices=selectHistory(end,60,700);
+    for(const [idx,col] of [[1,palette.cyan],[2,palette.pink]]){
+        const points=indices.map(i=>({x:ax.xx(data[i][0]),y:ax.yy(data[i][idx])}));
+        points.push({x:ax.xx(d[0]),y:ax.yy(d[idx])});line(ax.ctx,points,col,2.0);
+    }
+}
+function metrics(state){
+    if(!state)return;
+    $("valueVel").textContent=fmt(state[6],3)+" m/s";
+    $("valueAcc").textContent=fmt(state[7],3)+" m/s²";
+    $("valueFg").textContent=fmt(state[8],2)+" N";
+    $("valueT").textContent=fmt(state[9],2)+" N";
+    $("valueFc").textContent=forceFmt(state[10]);
+    $("valueE").textContent=fmt(state[13],3)+" J";
+    $("clock").textContent="t = "+fmt(state[0],1)+" s";
+    const end=data.length?data[data.length-1][0]:240;
+    const finished=simTime>=end-1e-6;
+    $("status").textContent=finished?
+        "Fin de la demostración (240 s simulados). Pulsa Reiniciar para empezar de nuevo.":
+        paused?"En pausa · Coriolis "+(settings.coriolis?"activo":"inactivo"):
+        "● Reproduciendo · Coriolis "+(settings.coriolis?"activo":"inactivo")+" · cálculos en Python";
+}
+function paint(){if(!settings||!data.length)return;
+    const s=frameAt(simTime);sceneDraw(s);topDraw(s);movementDraw(s);metrics(s);
+}
+// Reproducción de los estados ya calculados por Python. Sin saltos ni bucles.
+function tick(t){
+    if(!lastTick)lastTick=t;
+    let dt=Math.min(0.12,Math.max(0,(t-lastTick)/1000));lastTick=t;
+    if(!paused && data.length){
+        const limite=data[data.length-1][0];
+        simTime=Math.min(simTime+dt*Number($("speed").value),limite);
+        if(simTime>=limite-1e-6){
+            simTime=limite;
+            paused=true;
+            $("toggle").textContent="✓ Finalizado";
+            $("toggle").disabled=true;
+        }
+    }
+    if(t-lastPaint>32){paint();lastPaint=t;}
+    requestAnimationFrame(tick);
+}
+$("toggle").addEventListener("click",()=>{
+    if(!data.length || simTime>=data[data.length-1][0]-1e-6)return;
+    paused=!paused;$("toggle").textContent=paused?"▶ Continuar":"⏸ Pausar";
+    paint();
+});
+function sendCommand(action,extra={}){
+    paused=true;$("toggle").textContent="▶ Iniciar";
+    $("status").textContent="Aplicando cambios y calculando en Python…";
+    send("streamlit:setComponentValue",{value:{type:action,generation,...extra},dataType:"json"});
+}
+$("restart").addEventListener("click",()=>sendCommand("restart"));
+document.querySelectorAll("[data-mode]").forEach(b=>b.addEventListener("click",()=>{
+    if(settings && Number(b.dataset.mode)!==settings.rotation)sendCommand("set_mode",{rotation:Number(b.dataset.mode)});
+}));
+$("switchCoriolis").addEventListener("click",()=>sendCommand("set_coriolis"));
+$("resetCamera").addEventListener("click",()=>{yaw=-.78;pitch=.34;zoom=1;paint();});
+document.querySelectorAll("[data-vector]").forEach(e=>e.addEventListener("change",paint));
+// Mouse/touch para cámara orbitable; pinch también cambia escala.
+const activePointers=new Map();let oldDistance=null;
+$("scene").addEventListener("pointerdown",e=>{e.preventDefault();$("scene").setPointerCapture(e.pointerId);activePointers.set(e.pointerId,[e.clientX,e.clientY]);});
+$("scene").addEventListener("pointermove",e=>{if(!activePointers.has(e.pointerId))return;e.preventDefault();let old=activePointers.get(e.pointerId);activePointers.set(e.pointerId,[e.clientX,e.clientY]);
+    if(activePointers.size===1){yaw+=((e.clientX-old[0])*.008);pitch=clamp(pitch+(e.clientY-old[1])*.006,-1.25,1.25);paint();}
+    else if(activePointers.size===2){let pts=[...activePointers.values()];let dist=Math.hypot(pts[0][0]-pts[1][0],pts[0][1]-pts[1][1]);if(oldDistance)zoom=clamp(zoom*dist/oldDistance,.55,2.3);oldDistance=dist;paint();}
+});
+for(const event of ["pointerup","pointercancel"]){$("scene").addEventListener(event,e=>{activePointers.delete(e.pointerId);oldDistance=null;});}
+$("scene").addEventListener("wheel",e=>{e.preventDefault();zoom=clamp(zoom*Math.exp(-e.deltaY*.001),.55,2.3);paint();},{passive:false});
+const eqGroups=[
+["Posición y rotación",[
+["Posición horizontal","x₀ = L sen θ cos α ; y₀ = L sen θ sen α"],
+["Posición vertical","z₀ = −L cos θ"],
+["Velocidad inicial","v⃗₀ = v₀(−sen α, cos α, 0)"],
+["Rotación terrestre","Ω⃗ = ΩT M (0, cos φ, sen φ)"],
+["Velocidad angular terrestre","ΩT = 7,2921159 × 10⁻⁵ rad/s"],
+["Longitud de la cuerda","r⃗ · r⃗ = L²"],
+["Velocidad tangente","r⃗ · v⃗ = 0"],
+["De grados a radianes","θrad = θdeg π / 180"],
+]],
+["Fuerzas y aceleración",[
+["Gravedad","F⃗g = (0, 0, −mg)"],
+["Coriolis","F⃗C = −2m (Ω⃗ × v⃗)"],
+["Aceleración sin tensión","a⃗ext = (F⃗g + F⃗C) / m"],
+["Restricción de aceleración","r⃗ · a⃗ = −v⃗ · v⃗"],
+["Magnitud de la tensión","T = m/L [v⃗ · v⃗ + r⃗ · a⃗ext]"],
+["Fuerza de tensión","F⃗T = −T r⃗/L"],
+["Segunda ley de Newton","ma⃗ = F⃗g + F⃗C + F⃗T"],
+["Aceleración total","a⃗ = (F⃗g + F⃗C + F⃗T) / m"],
+]],
+["Movimiento, energía y precesión",[
+["Velocidad","dr⃗/dt = v⃗"],
+["Aceleración","dv⃗/dt = a⃗"],
+["Energía cinética","Ec = ½mv²"],
+["Altura","h = z + L"],
+["Energía potencial","Ep = mg(z + L)"],
+["Energía mecánica","E = Ec + Ep"],
+["Precesión aproximada","ωp ≈ ΩT M sen φ"],
+["Precesión en grados/hora","ω°/h = ωp × (180/π) × 3.600"],
+["Periodo (pequeños ángulos)","P ≈ 2π √(L/g)"],
+]]];
+// Cada grupo se presenta en su propia columna; no se usa un modal flotante
+// porque los iframes altos de Streamlit pueden dejarlo fuera de pantalla.
+$("eqList").innerHTML=eqGroups.map(g=>`<div class="eqGroup"><h3>${g[0]}</h3>`+g[1].map(e=>`<div class="item"><strong>${e[0]}</strong><div class="formula">${e[1]}</div></div>`).join("")+`</div>`).join("");
+function mostrarEcuaciones(open, desplazar=false){
+    $("eqPanel").hidden=!open;
+    $("equations").setAttribute("aria-expanded",String(open));
+    $("equations").textContent=open?"∑ Ocultar ecuaciones":"∑ Ver ecuaciones";
+    sendHeight();
+    if(desplazar){
+        requestAnimationFrame(()=>{
+            (open?$("eqPanel"):$("equations")).scrollIntoView({behavior:"smooth",block:open?"start":"center"});
+        });
+    }
+}
+$("equations").addEventListener("click",()=>mostrarEcuaciones($("eqPanel").hidden,true));
+$("closeEq").addEventListener("click",()=>mostrarEcuaciones(false,true));
+window.addEventListener("keydown",e=>{if(e.key==="Escape"&&!$("eqPanel").hidden)mostrarEcuaciones(false,true);});
+window.addEventListener("resize",()=>{paint();sendHeight();});
+if(typeof ResizeObserver!=="undefined")new ResizeObserver(()=>{paint();sendHeight();}).observe(document.body);
+send("streamlit:componentReady",{apiVersion:1});sendHeight();requestAnimationFrame(tick);
+</script>
+</body>
+</html>
