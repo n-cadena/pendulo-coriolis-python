@@ -28,7 +28,7 @@ button,select{font-family:inherit;color:var(--text);font-size:13px;border-radius
 .eqGroup h3{color:var(--cyan);font-size:14px;margin:0 0 12px}
 .eqGroup .item{padding:10px 0;border-bottom:1px solid #29384d;font-size:13px}
 .eqGroup .item:last-child{border:0}
-.eqGroup .formula{color:#ffe096;font-size:13px;line-height:1.5;margin:5px 0 0;font-family:Georgia,serif;overflow-wrap:anywhere}
+.eqGroup .formula{color:#ffe096;font-size:13px;line-height:1.55;margin:5px 0 0;font-family:Cambria,Georgia,"Times New Roman",serif;overflow-wrap:anywhere}.vec{text-decoration:overline;text-decoration-thickness:1px;font-style:italic;font-weight:700;display:inline-block;padding:0 1px}.sca{font-style:italic}
 @media(max-width:950px){.eqColumns{grid-template-columns:1fr 1fr}}
 @media(max-width:600px){.eqColumns{grid-template-columns:1fr}#eqPanel{padding:13px}.eqhdr{align-items:flex-start}}
 @media(max-width:850px){.wrap{grid-template-columns:1fr}.rightSide{display:grid;grid-template-columns:1fr 1fr;align-items:start}#metricsPanel{grid-column:1/-1;min-height:0}#scene{height:380px}.metric strong{font-size:17px}}
@@ -303,34 +303,34 @@ for(const event of ["pointerup","pointercancel"]){$("scene").addEventListener(ev
 $("scene").addEventListener("wheel",e=>{e.preventDefault();zoom=clamp(zoom*Math.exp(-e.deltaY*.001),.55,2.3);paint();},{passive:false});
 const eqGroups=[
 ["Posición y rotación",[
-["Posición horizontal","x₀ = L sen θ cos α ; y₀ = L sen θ sen α"],
-["Posición vertical","z₀ = −L cos θ"],
-["Velocidad inicial","v⃗₀ = v₀(−sen α, cos α, 0)"],
-["Rotación terrestre","Ω⃗ = ΩT M (0, cos φ, sen φ)"],
-["Velocidad angular terrestre","ΩT = 7,2921159 × 10⁻⁵ rad/s"],
-["Longitud de la cuerda","r⃗ · r⃗ = L²"],
-["Velocidad tangente","r⃗ · v⃗ = 0"],
-["De grados a radianes","θrad = θdeg π / 180"],
+["Posición horizontal","x<sub>0</sub> = L sen θ cos α ; y<sub>0</sub> = L sen θ sen α"],
+["Posición vertical","z<sub>0</sub> = −L cos θ"],
+["Velocidad inicial","<span class="vec">v</span><sub>0</sub> = v<sub>0</sub>(−sen α, cos α, 0)"],
+["Rotación terrestre","<span class="vec">Ω</span> = Ω<sub>T</sub> M (0, cos φ, sen φ)"],
+["Velocidad angular terrestre","Ω<sub>T</sub> = 7,2921159 × 10<sup>−5</sup> rad/s"],
+["Longitud de la cuerda","<span class="vec">r</span> · <span class="vec">r</span> = L<sup>2</sup>"],
+["Velocidad tangente","<span class="vec">r</span> · <span class="vec">v</span> = 0"],
+["De grados a radianes","θ<sub>rad</sub> = θ<sub>deg</sub> π / 180"],
 ]],
 ["Fuerzas y aceleración",[
-["Gravedad","F⃗g = (0, 0, −mg)"],
-["Coriolis","F⃗C = −2m (Ω⃗ × v⃗)"],
-["Aceleración sin tensión","a⃗ext = (F⃗g + F⃗C) / m"],
-["Restricción de aceleración","r⃗ · a⃗ = −v⃗ · v⃗"],
-["Magnitud de la tensión","T = m/L [v⃗ · v⃗ + r⃗ · a⃗ext]"],
-["Fuerza de tensión","F⃗T = −T r⃗/L"],
-["Segunda ley de Newton","ma⃗ = F⃗g + F⃗C + F⃗T"],
-["Aceleración total","a⃗ = (F⃗g + F⃗C + F⃗T) / m"],
+["Gravedad","<span class="vec">F</span><sub>g</sub> = (0, 0, −mg)"],
+["Coriolis","<span class="vec">F</span><sub>C</sub> = −2m (<span class="vec">Ω</span> × <span class="vec">v</span>)"],
+["Aceleración sin tensión","<span class="vec">a</span><sub>ext</sub> = (<span class="vec">F</span><sub>g</sub> + <span class="vec">F</span><sub>C</sub>) / m"],
+["Restricción de aceleración","<span class="vec">r</span> · <span class="vec">a</span> = − <span class="vec">v</span> · <span class="vec">v</span>"],
+["Magnitud de la tensión","T = m/L [<span class="vec">v</span> · <span class="vec">v</span> + <span class="vec">r</span> · <span class="vec">a</span><sub>ext</sub>]"],
+["Fuerza de tensión","<span class="vec">F</span><sub>T</sub> = −T <span class="vec">r</span>/L"],
+["Segunda ley de Newton","m<span class="vec">a</span> = <span class="vec">F</span><sub>g</sub> + <span class="vec">F</span><sub>C</sub> + <span class="vec">F</span><sub>T</sub>"],
+["Aceleración total","<span class="vec">a</span> = (<span class="vec">F</span><sub>g</sub> + <span class="vec">F</span><sub>C</sub> + <span class="vec">F</span><sub>T</sub>) / m"],
 ]],
 ["Movimiento, energía y precesión",[
-["Velocidad","dr⃗/dt = v⃗"],
-["Aceleración","dv⃗/dt = a⃗"],
-["Energía cinética","Ec = ½mv²"],
+["Velocidad","d<span class="vec">r</span>/dt = <span class="vec">v</span>"],
+["Aceleración","d<span class="vec">v</span>/dt = <span class="vec">a</span>"],
+["Energía cinética","E<sub>c</sub> = ½mv<sup>2</sup>"],
 ["Altura","h = z + L"],
-["Energía potencial","Ep = mg(z + L)"],
-["Energía mecánica","E = Ec + Ep"],
-["Precesión aproximada","ωp ≈ ΩT M sen φ"],
-["Precesión en grados/hora","ω°/h = ωp × (180/π) × 3.600"],
+["Energía potencial","E<sub>p</sub> = mg(z + L)"],
+["Energía mecánica","E = E<sub>c</sub> + E<sub>p</sub>"],
+["Precesión aproximada","ω<sub>p</sub> ≈ Ω<sub>T</sub> M sen φ"],
+["Precesión en grados/hora","ω°/h = ω<sub>p</sub> × (180/π) × 3.600"],
 ["Periodo (pequeños ángulos)","P ≈ 2π √(L/g)"],
 ]]];
 // Cada grupo se presenta en su propia columna; no se usa un modal flotante
