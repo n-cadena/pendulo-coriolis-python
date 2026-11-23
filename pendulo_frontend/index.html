@@ -90,7 +90,25 @@ button,select{font-family:inherit;color:var(--text);font-size:13px;border-radius
 function send(type, data={}){
     window.parent.postMessage({isStreamlitMessage:true, type, ...data}, "*");
 }
-function sendHeight(){send("streamlit:setFrameHeight",{height:Math.ceil(document.documentElement.scrollHeight+8)});}
+// Medir SOLO hasta el último elemento real, no el alto del iframe.
+// documentElement.scrollHeight puede tomar el alto actual del iframe y
+// provocar un bucle donde Streamlit lo hace cada vez más grande.
+let ultimaAlturaEnviada = 0;
+let alturaPendiente = false;
+function sendHeight(){
+    if(alturaPendiente)return;
+    alturaPendiente=true;
+    requestAnimationFrame(()=>{
+        alturaPendiente=false;
+        const ultimo = document.getElementById("uiFoot");
+        if(!ultimo)return;
+        const altura = Math.max(100, Math.ceil(ultimo.offsetTop + ultimo.offsetHeight + 12));
+        if(altura !== ultimaAlturaEnviada){
+            ultimaAlturaEnviada = altura;
+            send("streamlit:setFrameHeight",{height:altura});
+        }
+    });
+}
 let generation=null, lastSeq=-1, data=[], settings=null;
 let paused=true, simTime=0, lastTick=0, cursor=0, yaw=-0.78, pitch=0.34, zoom=1.0;
 let lastPaint=0;
@@ -351,7 +369,15 @@ $("equations").addEventListener("click",()=>mostrarEcuaciones($("eqPanel").hidde
 $("closeEq").addEventListener("click",()=>mostrarEcuaciones(false,true));
 window.addEventListener("keydown",e=>{if(e.key==="Escape"&&!$("eqPanel").hidden)mostrarEcuaciones(false,true);});
 window.addEventListener("resize",()=>{paint();sendHeight();});
-if(typeof ResizeObserver!=="undefined")new ResizeObserver(()=>{paint();sendHeight();}).observe(document.body);
+// Observar únicamente secciones cuyo tamaño depende del contenido.
+// NO observar document.body: su altura puede seguir la del iframe y retroalimentarse.
+if(typeof ResizeObserver!=="undefined"){
+    const ro = new ResizeObserver(()=>sendHeight());
+    [".wrap", ".bottom", "#eqPanel", "#uiFoot"].forEach(selector=>{
+        const el=document.querySelector(selector);
+        if(el)ro.observe(el);
+    });
+}
 send("streamlit:componentReady",{apiVersion:1});sendHeight();requestAnimationFrame(tick);
 </script>
 </body>
