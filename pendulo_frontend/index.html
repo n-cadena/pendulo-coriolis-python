@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Péndulo de Coriolis · Visor continuo</title>
+<title>Péndulo de Coriolis · Demostración de 240 s</title>
 <style>
 :root{color-scheme:dark;--bg:#0b0f19;--panel:#151f31;--tile:#101929;--stroke:#2b405d;--cyan:#00f0ff;--blue:#559cff;--green:#44e08a;--yellow:#ffcc55;--red:#ff6175;--pink:#ec70ff;--text:#eaf2ff;--muted:#9badc3}
 *{box-sizing:border-box}html,body{margin:0;padding:0;background:transparent;color:var(--text);font-family:Inter,system-ui,-apple-system,Segoe UI,Arial,sans-serif}
@@ -65,7 +65,7 @@ button,select{font-family:inherit;color:var(--text);font-size:13px;border-radius
   <section class="panel"><div class="head"><div class="panelTitle">Trayectoria · Vista superior</div><span class="subtle">Se dibuja durante Play</span></div><canvas id="topChart" class="chartCanvas"></canvas><div class="chartLegend"><span style="color:var(--cyan)">● Con Coriolis</span><span style="color:#94a9bf">┄ Sin Coriolis</span></div></section>
   <section class="panel"><div class="head"><div class="panelTitle">Movimiento horizontal</div><span class="subtle">Últimos 60 s simulados</span></div><canvas id="movementChart" class="chartCanvas"></canvas><div class="chartLegend"><span style="color:var(--cyan)">● Este (x)</span><span style="color:var(--pink)">● Norte (y)</span></div></section>
 </div>
-<div id="uiFoot">Física del péndulo: <b>Python + NumPy + SciPy (DOP853)</b>. El navegador solo dibuja estados calculados por Python. El movimiento no tiene una duración final: se calculan tramos nuevos desde el último estado. Si la conexión tarda, la reproducción espera los siguientes datos sin reiniciarse. Las flechas tienen escalas propias y Coriolis está ampliada visualmente.</div>
+<div id="uiFoot">Física del péndulo: <b>Python + NumPy + SciPy (DOP853)</b>. Duración máxima: <b>240 segundos simulados</b>. Al finalizar se detiene y conserva la posición final hasta que pulses <b>Reiniciar</b>. El navegador solo dibuja estados calculados por Python. Las flechas tienen escalas propias y Coriolis está ampliada visualmente.</div>
 <div id="eqBackdrop"><div id="eqModal"><div class="eqhdr"><div><strong>∑ Ecuaciones de la simulación</strong><div class="subtle">Las mismas ecuaciones del código Python, por grupos</div></div><button id="closeEq">Cerrar ✕</button></div><div id="eqList"></div></div></div>
 <script>
 "use strict";
@@ -76,14 +76,14 @@ function send(type, data={}){
 }
 function sendHeight(){send("streamlit:setFrameHeight",{height:Math.ceil(document.documentElement.scrollHeight+8)});}
 let generation=null, lastSeq=-1, data=[], settings=null;
-let paused=true, simTime=0, lastTick=0, requested=false, requestCounter=0, requestAt=0, cursor=0, yaw=-0.78, pitch=0.34, zoom=1.0;
+let paused=true, simTime=0, lastTick=0, cursor=0, yaw=-0.78, pitch=0.34, zoom=1.0;
 let lastPaint=0;
 const $=(id)=>document.getElementById(id);
 const palette={cyan:"#00f0ff",text:"#eaf2ff",blue:"#559cff",green:"#44e08a",yellow:"#ffcc55",red:"#ff6175",pink:"#ec70ff",muted:"#829db9",grid:"#293b52"};
 const fmt=(n,dec=2)=>Number(n).toLocaleString("es-CO",{minimumFractionDigits:dec,maximumFractionDigits:dec});
 function forceFmt(n){let v=Math.abs(n);if(v>0&&v<.00001)return fmt(n*1e6,2)+" µN";if(v>0&&v<.001)return fmt(n*1e3,3)+" mN";return fmt(n,5)+" N";}
 function clamp(x,a,b){return Math.min(b,Math.max(a,x));}
-function clearSimulation(){data=[];lastSeq=-1;simTime=0;paused=true;lastTick=0;cursor=0;requested=false;requestCounter=0;requestAt=0;$("toggle").textContent="▶ Iniciar";}
+function clearSimulation(){data=[];lastSeq=-1;simTime=0;paused=true;lastTick=0;cursor=0;$("toggle").textContent="▶ Iniciar";$("toggle").disabled=false;}
 window.addEventListener("message",ev=>{
     if (!ev.data||ev.data.type!=="streamlit:render")return;
     const a=ev.data.args||{};
@@ -91,20 +91,10 @@ window.addEventListener("message",ev=>{
     if(generation!==a.generation){generation=a.generation;clearSimulation();}
     settings=a.settings||settings;
     if(a.seq>lastSeq){
-        if(lastSeq<0){data=a.frames.slice();simTime=data.length?data[0][0]:0;}
-        else{
-            let t=data.length?data[data.length-1][0]:-Infinity;
-            // Los puntos de los nuevos tramos deben continuar en tiempo creciente.
-            for(const d of a.frames)if(d[0]>t+1e-8)data.push(d);
-            requested=false;
-        }
+        // La trayectoria completa llega de Python; nunca se concatena ni se repite.
+        data=a.frames.slice();
+        if(lastSeq<0)simTime=data.length?data[0][0]:0;
         lastSeq=a.seq;
-        // Evitar crecimiento ilimitado de memoria en el móvil: conservar solo
-        // una ventana reciente y el estado final (en Python) sigue intacto.
-        if(data.length>13000){
-            const keepFrom=Math.max(0,data.length-10000);
-            data=data.slice(keepFrom);cursor=Math.max(0,cursor-keepFrom);
-        }
     }
     syncLabels();paint();sendHeight();
 });
@@ -242,41 +232,37 @@ function metrics(state){
     $("valueFc").textContent=forceFmt(state[10]);
     $("valueE").textContent=fmt(state[13],3)+" J";
     $("clock").textContent="t = "+fmt(state[0],1)+" s";
-    const end=data.length?data[data.length-1][0]:0;
-    const isBuffer=simTime>=end-0.001 && !paused;
-    $("status").textContent=isBuffer?"Calculando el siguiente tramo en Python… La trayectoria no se reinicia.":
+    const end=data.length?data[data.length-1][0]:240;
+    const finished=simTime>=end-1e-6;
+    $("status").textContent=finished?
+        "Fin de la demostración (240 s simulados). Pulsa Reiniciar para empezar de nuevo.":
         paused?"En pausa · Coriolis "+(settings.coriolis?"activo":"inactivo"):
-        "● Reproduciendo · Coriolis "+(settings.coriolis?"activo":"inactivo")+
-        " · cálculos en Python";
+        "● Reproduciendo · Coriolis "+(settings.coriolis?"activo":"inactivo")+" · cálculos en Python";
 }
 function paint(){if(!settings||!data.length)return;
     const s=frameAt(simTime);sceneDraw(s);topDraw(s);movementDraw(s);metrics(s);
 }
-// Cada nuevo tramo se pide con anticipación. La respuesta nunca sobrescribe
-// la trayectoria anterior: se concatena usando tiempos crecientes.
-function askMore(now){if(!data.length||paused)return;
-    const remaining=data[data.length-1][0]-simTime;
-    if(remaining>Math.max(170,Number($("speed").value)*2.2))return;
-    // Reintentar si la red se ha interrumpido sin disparar una tormenta de requests.
-    if(requested&&now-requestAt<9000)return;
-    requested=true;requestAt=now;requestCounter++;
-    send("streamlit:setComponentValue",{
-        value:{type:"need_more",generation,request:requestCounter},dataType:"json"
-    });
-}
-function tick(t){if(!lastTick)lastTick=t;
+// Reproducción de los estados ya calculados por Python. Sin saltos ni bucles.
+function tick(t){
+    if(!lastTick)lastTick=t;
     let dt=Math.min(0.12,Math.max(0,(t-lastTick)/1000));lastTick=t;
     if(!paused && data.length){
-        simTime=Math.min(simTime+dt*Number($("speed").value),data[data.length-1][0]);
-        askMore(t);
+        const limite=data[data.length-1][0];
+        simTime=Math.min(simTime+dt*Number($("speed").value),limite);
+        if(simTime>=limite-1e-6){
+            simTime=limite;
+            paused=true;
+            $("toggle").textContent="✓ Finalizado";
+            $("toggle").disabled=true;
+        }
     }
     if(t-lastPaint>32){paint();lastPaint=t;}
     requestAnimationFrame(tick);
 }
 $("toggle").addEventListener("click",()=>{
-    if(!data.length)return;
+    if(!data.length || simTime>=data[data.length-1][0]-1e-6)return;
     paused=!paused;$("toggle").textContent=paused?"▶ Continuar":"⏸ Pausar";
-    if(!paused)askMore(performance.now());paint();
+    paint();
 });
 function sendCommand(action,extra={}){
     paused=true;$("toggle").textContent="▶ Iniciar";
