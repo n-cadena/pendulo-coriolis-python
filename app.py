@@ -5,6 +5,7 @@ Ejecutar: streamlit run app.py
 from dataclasses import replace
 import numpy as np
 import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 import streamlit as st
 from fisica import Parametros, OMEGA_TIERRA, calcular, magnitudes, precesion_grados_hora
 from ecuaciones import GRUPOS
@@ -80,8 +81,8 @@ def resolver(key):
 with st.spinner("Calculando trayectorias en Python…"):
     ts,ys,base=resolver(tuple(sorted(vars(p).items())))
 
-st.markdown("### 🎞️ Animación 3D")
-st.caption("Pulsa **▶ Reproducir** dentro del gráfico. Usa el control de tiempo para avanzar o retroceder. Arrastra la imagen para girar la cámara. La reproducción ocurre localmente en el navegador.")
+st.markdown("### 🎞️ Animación 3D y gráficas sincronizadas")
+st.caption("Pulsa **▶ Reproducir**: el péndulo 3D, la vista superior y los desplazamientos se dibujan juntos, desde el inicio. Arrastra el péndulo para cambiar la cámara.")
 
 v1,v2,v3,v4,v5=st.columns(5)
 with v1: vg=st.checkbox("Gravedad",True)
@@ -117,9 +118,9 @@ names={"Fg":"Gravedad","T":"Tensión","Fc":"Coriolis","v":"Velocidad","a":"Acele
 colors={"Fg":C["rojo"],"T":C["azul"],"Fc":C["rosa"],"v":C["verde"],"a":C["amarillo"]}
 keys=[key for key in names if visible[key]]
 
-# Precalculamos fotogramas a intervalos de ~1.5 s simulados (161 fotogramas).
-# Los datos que se visualizan se obtuvieron mediante integración real en Python.
-frame_indices=np.unique(np.r_[np.arange(0,len(ts),19),len(ts)-1]).astype(int)
+# Precalculamos unos 121 fotogramas, separados por 2 s simulados.
+# Los datos que se visualizan se obtuvieron mediante integración en Python.
+frame_indices=np.unique(np.r_[np.arange(0,len(ts),25),len(ts)-1]).astype(int)
 
 def datos_trazas(idx):
     r=ys[idx,:3]
@@ -134,24 +135,67 @@ def datos_trazas(idx):
         result.append(go.Scatter3d(x=xx,y=yy,z=zz,mode="lines",name=names[key],line=dict(color=colors[key],width=5),hoverinfo="skip"))
     return result
 
-fig=go.Figure(data=datos_trazas(0))
-frames=[go.Frame(name=str(int(idx)),data=datos_trazas(int(idx)),traces=list(range(3+len(keys)))) for idx in frame_indices]
-fig.frames=frames
-steps=[]
-for idx in frame_indices:
-    steps.append(dict(method="animate",label=fmt(ts[idx],0),args=[[str(int(idx))],{"mode":"immediate","frame":{"duration":0,"redraw":True},"transition":{"duration":0}}]))
+# Un solo gráfico de Plotly para sincronizar las tres vistas con el MISMO botón Play.
+# Todos los puntos vienen de las trayectorias calculadas previamente en Python.
+fig=make_subplots(
+    rows=3, cols=1,
+    specs=[[{"type":"scene"}],[{"type":"xy"}],[{"type":"xy"}]],
+    row_heights=[0.50,0.25,0.25], vertical_spacing=0.065,
+    subplot_titles=("Péndulo tridimensional", "Vista superior (trayectoria)", "Movimiento horizontal")
+)
+for traza in datos_trazas(0):
+    fig.add_trace(traza,row=1,col=1)
+
+# Cinco trazas adicionales en los dos gráficos 2D. En t=0 solo muestran un punto.
+fig.add_trace(go.Scatter(x=[base[0,0]],y=[base[0,1]],mode="lines",name="Sin Coriolis",line=dict(color=C["gris"],dash="dash",width=2),legendgroup="sin"),row=2,col=1)
+fig.add_trace(go.Scatter(x=[ys[0,0]],y=[ys[0,1]],mode="lines",name="Trayectoria actual",line=dict(color=C["cian"],width=2),legendgroup="actual"),row=2,col=1)
+fig.add_trace(go.Scatter(x=[ys[0,0]],y=[ys[0,1]],mode="markers",name="Posición actual",marker=dict(color=C["amarillo"],size=9),showlegend=False),row=2,col=1)
+fig.add_trace(go.Scatter(x=[ts[0]],y=[ys[0,0]],mode="lines",name="Este x",line=dict(color=C["cian"],width=2),legendgroup="este"),row=3,col=1)
+fig.add_trace(go.Scatter(x=[ts[0]],y=[ys[0,1]],mode="lines",name="Norte y",line=dict(color=C["rosa"],width=2),legendgroup="norte"),row=3,col=1)
+
+def graficas_hasta(idx):
+    """Devuelve los puntos recorridos HASTA ese instante, nunca la curva futura."""
+    muestras=np.unique(np.linspace(0,int(idx),min(int(idx)+1,230),dtype=int))
+    return [
+        go.Scatter(x=base[muestras,0],y=base[muestras,1]),
+        go.Scatter(x=ys[muestras,0],y=ys[muestras,1]),
+        go.Scatter(x=[ys[idx,0]],y=[ys[idx,1]]),
+        go.Scatter(x=ts[muestras],y=ys[muestras,0]),
+        go.Scatter(x=ts[muestras],y=ys[muestras,1]),
+    ]
+
+n_trazas=3+len(keys)+5
+fig.frames=[
+    go.Frame(name=str(int(idx)),
+             data=datos_trazas(int(idx))+graficas_hasta(int(idx)),
+             traces=list(range(n_trazas)))
+    for idx in frame_indices
+]
+steps=[dict(method="animate",label=fmt(ts[idx],0),args=[[str(int(idx))],
+    {"mode":"immediate","frame":{"duration":0,"redraw":True},"transition":{"duration":0}}])
+    for idx in frame_indices]
+
 fig.update_layout(
-    height=520,margin=dict(l=0,r=0,t=0,b=0),paper_bgcolor=C["fondo"],font=dict(color=C["texto"],size=11),
-    showlegend=True,legend=dict(orientation="h",y=1,x=0,font=dict(size=10)),
+    height=1090,margin=dict(l=4,r=4,t=42,b=25),
+    paper_bgcolor=C["fondo"],plot_bgcolor=C["panel"],font=dict(color=C["texto"],size=11),
+    showlegend=True,legend=dict(orientation="h",y=1.025,x=0,font=dict(size=10)),
     scene=dict(xaxis=dict(title="Este x (m)",range=[-1.15*p.longitud,1.15*p.longitud],backgroundcolor=C["panel"]),
                yaxis=dict(title="Norte y (m)",range=[-1.15*p.longitud,1.15*p.longitud],backgroundcolor=C["panel"]),
                zaxis=dict(title="Arriba z (m)",range=[-1.23*p.longitud,.2*p.longitud],backgroundcolor=C["panel"]),
                aspectmode="manual",aspectratio=dict(x=1,y=1,z=.75),camera=dict(eye=dict(x=1.4,y=1.5,z=1.0))),
-    updatemenus=[dict(type="buttons",direction="left",showactive=False,x=0,y=-.11,xanchor="left",yanchor="top",buttons=[
-        dict(label="▶ Reproducir",method="animate",args=[None,{"fromcurrent":True,"mode":"immediate","frame":{"duration":100,"redraw":True},"transition":{"duration":0}}]),
-        dict(label="⏸ Pausar",method="animate",args=[[None],{"mode":"immediate","frame":{"duration":0,"redraw":False},"transition":{"duration":0}}])])],
-    sliders=[dict(active=0,x=.06,y=-.22,len=.91,steps=steps,currentvalue={"prefix":"Tiempo simulado ≈ ","suffix":" s","font":{"color":C["texto"]}},tickcolor=C["gris"],font={"color":C["gris"],"size":9},minorticklen=0)],
-    uirevision=f"config-{st.session_state.revision}")
+    updatemenus=[dict(type="buttons",direction="left",showactive=False,x=0,y=-.055,xanchor="left",yanchor="top",buttons=[
+        dict(label="▶ Reproducir",method="animate",args=[None,{"fromcurrent":True,"mode":"immediate","frame":{"duration":115,"redraw":True},"transition":{"duration":0}}]),
+        dict(label="⏸ Pausar",method="animate",args=[[None],{"mode":"immediate","frame":{"duration":0,"redraw":False},"transition":{"duration":0}}]),
+        dict(label="↺ Reiniciar",method="animate",args=[[str(int(frame_indices[0]))],{"mode":"immediate","frame":{"duration":0,"redraw":True},"transition":{"duration":0}}])])],
+    sliders=[dict(active=0,x=.08,y=-.075,len=.86,steps=steps,
+             currentvalue={"prefix":"Tiempo simulado ≈ ","suffix":" s","font":{"color":C["texto"]}},
+             tickcolor=C["gris"],font={"color":C["gris"],"size":9},minorticklen=0)],
+    uirevision=f"config-{st.session_state.revision}"
+)
+fig.update_xaxes(title_text="Este, x (m)",row=2,col=1,gridcolor="#344054",range=[-1.12*p.longitud,1.12*p.longitud])
+fig.update_yaxes(title_text="Norte, y (m)",row=2,col=1,gridcolor="#344054",range=[-1.12*p.longitud,1.12*p.longitud],scaleanchor="x",scaleratio=1)
+fig.update_xaxes(title_text="Tiempo simulado (s)",row=3,col=1,gridcolor="#344054",range=[0,240])
+fig.update_yaxes(title_text="Desplazamiento (m)",row=3,col=1,gridcolor="#344054",range=[-.85*p.longitud,.85*p.longitud])
 st.plotly_chart(fig,use_container_width=True,config={"displaylogo":False,"scrollZoom":False},key="grafica_principal")
 st.caption("Las flechas utilizan escalas gráficas independientes; la de Coriolis está ampliada para poder verse. La animación utiliza fotogramas muestreados de la trayectoria calculada en Python.")
 
@@ -170,32 +214,7 @@ b1.metric("Fuerza de gravedad",f"{fmt(np.linalg.norm(magn['Fg']),2)} N")
 b2.metric("Tensión de la cuerda",f"{fmt(magn['tension'],3)} N")
 b3.metric("Energía total",f"{fmt(magn['E'],3)} J")
 st.caption(f"Aceleración de gravedad: **{fmt(p.gravedad,2)} m/s²** · Precesión aproximada: **{fmt(precesion_grados_hora(p),2)} °/h**" if p.coriolis else f"Aceleración de gravedad: **{fmt(p.gravedad,2)} m/s²** · Precesión: no aplicable (Coriolis desactivado)")
-st.info("El control de tiempo de esta sección consulta valores calculados en Python; el control dentro del gráfico reproduce la animación visual. Son controles independientes.",icon="ℹ️")
-
-def estilo_2d(fig,height=320):
-    fig.update_layout(height=height,paper_bgcolor=C["fondo"],plot_bgcolor=C["panel"],font=dict(color=C["texto"]),margin=dict(l=5,r=5,t=10,b=15),legend=dict(orientation="h",y=1.18,x=0),hovermode="closest")
-    fig.update_xaxes(gridcolor="#344054")
-    fig.update_yaxes(gridcolor="#344054")
-    return fig
-
-st.markdown("### 📈 Trayectorias calculadas en Python")
-left,right=st.columns(2)
-with left:
-    plane=go.Figure()
-    skip=3
-    plane.add_trace(go.Scattergl(x=base[::skip,0],y=base[::skip,1],mode="lines",name="Sin Coriolis",line=dict(color=C["gris"],dash="dash")))
-    plane.add_trace(go.Scattergl(x=ys[::skip,0],y=ys[::skip,1],mode="lines",name="Con configuración actual",line=dict(color=C["cian"])))
-    plane.add_trace(go.Scatter(x=[ys[i,0]],y=[ys[i,1]],mode="markers",name="Punto seleccionado",marker=dict(color=C["amarillo"],size=9)))
-    plane.update_xaxes(title="Este, x (m)")
-    plane.update_yaxes(title="Norte, y (m)",scaleanchor="x",scaleratio=1)
-    st.plotly_chart(estilo_2d(plane),use_container_width=True,config={"displaylogo":False})
-with right:
-    dis=go.Figure()
-    dis.add_trace(go.Scattergl(x=ts[::3],y=ys[::3,0],mode="lines",name="Este x",line=dict(color=C["cian"])))
-    dis.add_trace(go.Scattergl(x=ts[::3],y=ys[::3,1],mode="lines",name="Norte y",line=dict(color=C["rosa"])))
-    dis.update_xaxes(title="Tiempo simulado (s)")
-    dis.update_yaxes(title="Desplazamiento (m)")
-    st.plotly_chart(estilo_2d(dis),use_container_width=True,config={"displaylogo":False})
+st.info("Las tres vistas gráficas avanzan juntas. El control de esta sección permite consultar los valores físicos de cualquier instante, independientemente de la animación.",icon="ℹ️")
 
 with st.expander("∑ Ver las ecuaciones y su significado"):
     for name,items in GRUPOS:
@@ -205,6 +224,5 @@ with st.expander("∑ Ver las ecuaciones y su significado"):
             st.latex(formula)
             st.caption(description)
     st.caption("Sin rozamiento; gravedad efectiva constante; precesión aproximada para oscilaciones pequeñas.")
-with st.expander("🐍 Cómo sustentar el código Python"):
-    st.markdown("""El archivo **`fisica.py`** contiene las funciones `rotacion_local`, `condiciones_iniciales`, `magnitudes`, `ecuaciones` y `calcular`. **NumPy** opera con vectores y **SciPy DOP853** integra el movimiento. `app.py` controla la interfaz y entrega los resultados a Plotly. **Plotly únicamente anima en el navegador los resultados precalculados por Python**; no sustituye el cálculo físico.""")
 st.caption("Modelo ideal · Sistema de ejes Este–Norte–Arriba · Python + SciPy + Streamlit + Plotly")
+
