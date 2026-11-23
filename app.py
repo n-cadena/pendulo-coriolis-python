@@ -1,4 +1,4 @@
-    """Péndulo de Coriolis. Cálculos: Python/NumPy/SciPy DOP853.
+"""Péndulo de Coriolis. Cálculos: Python/NumPy/SciPy DOP853.
 La reproducción de los fotogramas YA calculados se efectúa en Plotly en el navegador.
 Ejecutar: streamlit run app.py
 """
