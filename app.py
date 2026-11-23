@@ -2,10 +2,10 @@
 
 Estructura:
 - fisica.py implementa las leyes de Newton y la fuerza de Coriolis.
-- app.py integra TRAMOS SUCESIVOS con solve_ivp/DOP853 en Python.
-- pendulo_frontend/index.html dibuja esos resultados y pide el siguiente tramo.
+- app.py calcula una trayectoria de 240 segundos simulados con SciPy/DOP853.
+- pendulo_frontend/index.html dibuja y anima esos resultados.
 
-No se reciclan trayectorias y no existe una duración total fija.
+La reproducción se detiene a los 240 s y NO se reinicia automáticamente.
 Para ejecutar: streamlit run app.py
 """
 from dataclasses import replace
@@ -40,18 +40,16 @@ FRONTEND = components.declare_component(
     path=str(Path(__file__).parent / "pendulo_frontend"),
 )
 
-# Se puede cambiar el tamaño de los tramos, pero no existe un máximo de tiempo.
-# Los cálculos siguen en Python incluso cuando se observan desde el celular.
-DURACION_PRIMER_TRAMO = 240.0
-DURACION_TRAMOS_SIGUIENTES = 180.0
+# Límite estable de la demostración: 240 s de tiempo SIMULADO.
+# El navegador detiene Play al llegar al final y espera a Reiniciar.
+DURACION_TOTAL = 240.0
 PASO_SALIDA = 0.12
 
 
 def integrar_tramo(p: Parametros, t0: float, inicio: np.ndarray, duracion: float):
-    """Continuar la solución desde t0, sin reemplazarla por la condición inicial.
+    """Integra la ecuación física entre t0 y t0+duracion con DOP853.
 
-    DOP853 resuelve dr/dt=v y dv/dt=a sobre un intervalo nuevo. Se conserva
-    la misma proyección geométrica del programa original: |r|=L y r·v=0.
+    La proyección geométrica conserva la longitud de cuerda L y r·v=0.
     """
     n = round(duracion / PASO_SALIDA)
     tiempos = t0 + np.arange(n + 1, dtype=float) * (duracion / n)
@@ -73,17 +71,14 @@ def integrar_tramo(p: Parametros, t0: float, inicio: np.ndarray, duracion: float
 
 
 def generar_bloque(p: Parametros, t0: float, con_inicio, sin_inicio, duracion):
-    """Genera otro tramo y devuelve las condiciones para el tramo siguiente.
+    """Calcula y empaqueta una trayectoria fija, con y sin Coriolis.
 
-    La rama 'sin Coriolis' es independiente y también continúa desde su
-    propio último estado, para una comparación físicamente consistente.
+    Ambas comienzan en el mismo estado inicial.
     """
     ts, con = integrar_tramo(p, t0, con_inicio, duracion)
     _, sin = integrar_tramo(replace(p, coriolis=False), t0, sin_inicio, duracion)
     registros = []
-    # La primera fila de cada nuevo bloque ya existía en el bloque anterior.
-    # Omitirla evita duplicados en el navegador.
-    primero = 0 if t0 == 0.0 else 1
+    primero = 0
     for i in range(primero, len(ts)):
         estado = con[i]
         q = magnitudes(estado, p)
@@ -108,15 +103,11 @@ def generar_bloque(p: Parametros, t0: float, con_inicio, sin_inicio, duracion):
 def nueva_sesion(p: Parametros, generacion: int):
     registros, t, yc, ys = generar_bloque(
         p, 0.0, condiciones_iniciales(p), condiciones_iniciales(p),
-        DURACION_PRIMER_TRAMO,
+        DURACION_TOTAL,
     )
     return {
         "generacion": generacion,
         "seq": 0,
-        "last_request": -1,
-        "t": t,
-        "yc": yc,
-        "ys": ys,
         "bloque": registros,
     }
 
@@ -151,7 +142,7 @@ with st.sidebar:
         st.session_state.generacion += 1
         st.session_state.pop("trayectoria", None)
         st.rerun()
-    st.caption("Física: NumPy + SciPy · método DOP853. No se repite ningún tramo.")
+    st.caption("Física: NumPy + SciPy · DOP853. Duración máxima de 240 s simulados.")
 
 p = Parametros(**st.session_state.config)
 st.markdown('<p style="font-size:0.70rem;color:#00F0FF;letter-spacing:.16em;font-weight:800;margin-bottom:0">LABORATORIO INTERACTIVO · FÍSICA</p>', unsafe_allow_html=True)
@@ -160,7 +151,7 @@ st.caption("Modelo físico en Python · Vista interactiva desde el celular · Co
 
 if ("trayectoria" not in st.session_state or
     st.session_state.trayectoria["generacion"] != st.session_state.generacion):
-    with st.spinner("Calculando el primer tramo físico en Python…"):
+    with st.spinner("Calculando los 240 segundos de trayectoria en Python…"):
         st.session_state.trayectoria = nueva_sesion(p, st.session_state.generacion)
 
 s = st.session_state.trayectoria
@@ -170,16 +161,15 @@ componente = FRONTEND(
         "length": p.longitud, "mass": p.masa, "gravity": p.gravedad,
         "rotation": p.multiplicador, "coriolis": p.coriolis,
         "precession": precesion_grados_hora(p),
+        "duration": DURACION_TOTAL,
     },
     key="pendulo_reproductor_continuo",
     default=None,
 )
 
-# El visor NO calcula fuerzas ni trayectoria. Solo pide datos antes de que se agoten.
-# Cuando llega la petición, se conserva el estado físico exacto del último
-# fotograma y se empieza otro intervalo temporal con DOP853.
-# Controles táctiles de reproducción y rotación: estos cambios vuelven a
-# calcular físicamente desde t=0 con la configuración elegida.
+# El visor recibe la trayectoria completa (0 a 240 s). El navegador solo
+# interpola fotogramas para dibujarlos: nunca solicita tramos posteriores.
+# Reiniciar o cambiar los modos vuelve a calcular desde el estado inicial.
 if isinstance(componente, dict) and componente.get("generation") == s["generacion"]:
     tipo = componente.get("type")
     if tipo in ("restart", "set_mode", "set_coriolis"):
@@ -189,23 +179,6 @@ if isinstance(componente, dict) and componente.get("generation") == s["generacio
             st.session_state.config["coriolis"] = not bool(p.coriolis)
         st.session_state.generacion += 1
         st.session_state.pop("trayectoria", None)
-        st.rerun()
-
-if (isinstance(componente, dict)
-        and componente.get("type") == "need_more"
-        and componente.get("generation") == s["generacion"]):
-    try:
-        peticion = int(componente["request"])
-    except (ValueError, TypeError, KeyError):
-        peticion = -1
-    if peticion > s["last_request"]:
-        s["last_request"] = peticion
-        with st.spinner("Python está calculando el siguiente tramo…"):
-            reg, s["t"], s["yc"], s["ys"] = generar_bloque(
-                p, s["t"], s["yc"], s["ys"], DURACION_TRAMOS_SIGUIENTES,
-            )
-        s["seq"] += 1
-        s["bloque"] = reg
         st.rerun()
 
 with st.expander("∑ Las 25 ecuaciones del modelo (desarrollo completo)", expanded=False):
